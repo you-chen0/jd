@@ -1003,7 +1003,7 @@ body {
 <div class="vignette" id="vignette"></div>
 <div class="spotlight" id="spotlight"></div>
 <button class="mute-btn" id="muteBtn" onclick="SoundEngine.toggleMute()" title="音效开关">🔊</button>
-<span class="ver-label">TERMINAL v1.2 · AMBIENT</span>
+<span class="ver-label">TERMINAL v1.3 · BGM</span>
 
 <div class="app-shell">
 
@@ -1169,10 +1169,10 @@ const SoundEngine = (function() {
   var ctx = null;
   var masterGain = null;
   var muted = false;
-  var bgmNodes = [];
-  var bgmGain = null;
-  var bgmPlaying = false;
-  var bgmInterval = null;
+  var bgmAudio = {};
+  var bgmCurrent = null;
+  var bgmCurrentKey = null;
+  var bgmVolume = 0.55;
 
   function init() {
     if (ctx) return;
@@ -1384,115 +1384,79 @@ const SoundEngine = (function() {
     noiseBurst(t + 0.5, 120, 0.7, 0.18, 0.25, 'lowpass');
   }
 
-  // --- BGM: dark ambient chord progression ---
-  // Am - F - G - Em, slow pads, warm triangle waves
-  var chords = [
-    [220, 261.63, 329.63],     // Am
-    [174.61, 220, 261.63],     // F
-    [196, 246.94, 293.66],     // G
-    [164.81, 196, 246.94]      // Em
-  ];
-  var bassRoots = [110, 87.31, 98, 82.41];
+  // --- BGM: HTML5 Audio with crossfade ---
+  var bgmTracks = {
+    menu: 'bgm/bgm_menu.mp3',
+    game: 'bgm/bgm_game.mp3',
+    quiz: 'bgm/bgm_quiz.mp3'
+  };
+  var bgmAudio = {};
+  var bgmCurrent = null;
+  var bgmCurrentKey = null;
+  var bgmVolume = 0.55;
 
-  function bgmStart() {
-    if (!ctx || muted || bgmPlaying) return;
-    resume();
-    bgmPlaying = true;
-    
-    // Master BGM gain
-    bgmGain = mkGain(0.1);
-    
-    // Low-pass filter for warm pad
-    var lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 500;
-    lp.Q.value = 0.6;
-    lp.connect(bgmGain);
-    
-    // 3 detuned triangle oscillators for chord pad
-    var padOscs = [];
-    for (var i = 0; i < 3; i++) {
-      var osc = ctx.createOscillator();
-      osc.type = 'triangle';
-      osc.frequency.value = chords[0][i];
-      // Slight detune for warmth
-      osc.detune.value = [0, -6, 7][i];
-      var g = ctx.createGain();
-      g.gain.value = 0.32;
-      osc.connect(g);
-      g.connect(lp);
-      osc.start();
-      padOscs.push({ osc: osc, gain: g });
-      bgmNodes.push(osc, g);
+  // Pre-create audio elements
+  (function() {
+    Object.keys(bgmTracks).forEach(function(key) {
+      var a = new Audio();
+      a.src = bgmTracks[key];
+      a.loop = true;
+      a.volume = 0;
+      a.preload = 'auto';
+      bgmAudio[key] = a;
+    });
+  })();
+
+  function bgmFade(audio, to, ms) {
+    var steps = 20;
+    var stepMs = ms / steps;
+    var from = audio.volume;
+    var diff = to - from;
+    var i = 0;
+    var iv = setInterval(function() {
+      i++;
+      audio.volume = Math.max(0, Math.min(1, from + diff * (i / steps)));
+      if (i >= steps) clearInterval(iv);
+    }, stepMs);
+  }
+
+  function bgmPlay(track) {
+    if (muted) return;
+    var target = bgmAudio[track];
+    if (!target) return;
+    if (bgmCurrent === target && target.volume >= bgmVolume - 0.01) return;
+
+    // Fade out current
+    if (bgmCurrent && bgmCurrent !== target) {
+      bgmFade(bgmCurrent, 0, 350);
+      setTimeout(function() {
+        if (bgmCurrent !== target) {
+          bgmCurrent.pause();
+          bgmCurrent.currentTime = 0;
+        }
+      }, 400);
     }
-    
-    // Bass sine
-    var bass = ctx.createOscillator();
-    bass.type = 'sine';
-    bass.frequency.value = bassRoots[0];
-    var bassG = ctx.createGain();
-    bassG.gain.value = 0.45;
-    bass.connect(bassG);
-    bassG.connect(lp);
-    bass.start();
-    bgmNodes.push(bass, bassG);
-    
-    // Slow filter LFO for subtle movement
-    var lfo = ctx.createOscillator();
-    lfo.type = 'sine';
-    lfo.frequency.value = 0.09;
-    var lfoG = ctx.createGain();
-    lfoG.gain.value = 160;
-    lfo.connect(lfoG);
-    lfoG.connect(lp.frequency);
-    lfo.start();
-    bgmNodes.push(lfo, lfoG);
-    
-    // Very subtle noise texture (like tape hiss)
-    var buf = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);
-    var ch = buf.getChannelData(0);
-    for (var j = 0; j < ch.length; j++) ch[j] = (Math.random() - 0.5) * 0.015;
-    var ns = ctx.createBufferSource();
-    ns.buffer = buf;
-    ns.loop = true;
-    var nhp = ctx.createBiquadFilter();
-    nhp.type = 'highpass';
-    nhp.frequency.value = 600;
-    var ng = ctx.createGain();
-    ng.gain.value = 0.04;
-    ns.connect(nhp);
-    nhp.connect(ng);
-    ng.connect(bgmGain);
-    ns.start();
-    bgmNodes.push(ns, nhp, ng);
-    
-    // Chord progression sequencer
-    var chordIdx = 0;
-    bgmInterval = setInterval(function() {
-      chordIdx = (chordIdx + 1) % chords.length;
-      var c = chords[chordIdx];
-      var t = ctx.currentTime;
-      // Smooth transition
-      for (var k = 0; k < 3; k++) {
-        padOscs[k].osc.frequency.linearRampToValueAtTime(c[k], t + 0.08);
-      }
-      bass.frequency.linearRampToValueAtTime(bassRoots[chordIdx], t + 0.08);
-    }, 3600);
+
+    // Fade in target
+    bgmCurrent = target;
+    bgmCurrentKey = track;
+    target.currentTime = 0;
+    var p = target.play();
+    if (p && p.catch) p.catch(function(){});
+    bgmFade(target, bgmVolume, 500);
   }
 
   function bgmStop() {
-    if (!bgmPlaying) return;
-    bgmPlaying = false;
-    if (bgmInterval) { clearInterval(bgmInterval); bgmInterval = null; }
-    if (bgmGain) {
-      bgmGain.gain.setValueAtTime(bgmGain.gain.value, ctx.currentTime);
-      bgmGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+    if (bgmCurrent) {
+      bgmFade(bgmCurrent, 0, 350);
+      var a = bgmCurrent;
+      setTimeout(function() {
+        a.pause();
+        a.currentTime = 0;
+      }, 400);
+      bgmCurrent = null;
+      bgmCurrentKey = null;
     }
-    setTimeout(function() {
-      bgmNodes.forEach(function(n) { try { n.stop(); } catch(e) {} });
-      bgmNodes = [];
-      if (bgmGain) { try { bgmGain.disconnect(); } catch(e) {}; bgmGain = null; }
-    }, 600);
   }
 
   function toggleMute() {
@@ -1506,6 +1470,7 @@ const SoundEngine = (function() {
     } else {
       btn.textContent = '🔊';
       btn.classList.remove('muted');
+      if (bgmCurrentKey) bgmPlay(bgmCurrentKey);
     }
     return muted;
   }
@@ -1527,7 +1492,7 @@ const SoundEngine = (function() {
     click: click, match: match, mismatch: mismatch, combo: combo,
     quizCorrect: quizCorrect, quizWrong: quizWrong,
     levelWin: levelWin, levelLose: levelLose,
-    bgmStart: bgmStart, bgmStop: bgmStop,
+    bgmStop: bgmStop, bgmPlay: bgmPlay,
     toggleMute: toggleMute, isMuted: isMuted
   };
 })();
@@ -1703,7 +1668,7 @@ function shake(el) {
    SCREEN NAV
    ============================================ */
 function showStartScreen() {
-	SoundEngine.bgmStop();
+	SoundEngine.bgmPlay('menu');
   hideAll();
   document.getElementById('startScreen').classList.remove('hidden');
   document.getElementById('progressTrack').style.display = 'flex';
@@ -1753,7 +1718,7 @@ function skipBriefing() { startGame(state.currentCase); }
    GAME START
    ============================================ */
 function startGame(lv) {
-	SoundEngine.init(); SoundEngine.bgmStart();
+	SoundEngine.init(); SoundEngine.bgmPlay('game');
   var c = CASES[lv];
   state.currentCase = lv;
   state.time = c.time;
@@ -1950,6 +1915,7 @@ function checkAllMatched() {
    QUIZ PHASE — Two question types mixed
    ============================================ */
 function startQuiz() {
+	SoundEngine.bgmPlay('quiz');
   var c = CASES[state.currentCase];
   document.getElementById('grid').classList.add('hidden');
   var qp = document.getElementById('quizPanel');
@@ -2157,7 +2123,6 @@ function finishQuiz() {
 function endGame(success) {
   clearInterval(state.timer);
   clearInterval(state.quizTimer);
-	SoundEngine.bgmStop();
   state.playing = false;
   document.getElementById('vignette').classList.remove('urgent');
   document.getElementById('spotlight').classList.remove('on');
@@ -2167,6 +2132,7 @@ function endGame(success) {
 
   if (success) {
     celebrate();
+	SoundEngine.bgmStop();
 	SoundEngine.levelWin();
     if (!state.completed.includes(state.currentCase)) state.completed.push(state.currentCase);
     if (state.currentCase < 3) state.unlocked = Math.max(state.unlocked, state.currentCase + 1);
@@ -2193,6 +2159,7 @@ function endGame(success) {
     document.getElementById('resultIcon').textContent = '⏰';
     document.getElementById('resultTitle').textContent = '时间耗尽';
 	SoundEngine.levelLose();
+    SoundEngine.bgmPlay('menu');
     document.getElementById('resultTitle').className = 'result-heading lose';
     document.getElementById('finalScore').textContent = state.score;
     document.getElementById('finalGrade').textContent = '调查中断';
@@ -2278,7 +2245,6 @@ function confirmQuit() {
 }
 function closeQuit() { document.getElementById('quitModal').classList.add('hidden'); }
 function forceQuit() {
-	SoundEngine.bgmStop();
   document.getElementById('quitModal').classList.add('hidden');
   clearInterval(state.timer); clearInterval(state.quizTimer);
   state.playing = false;
