@@ -150,6 +150,9 @@ body {
   color: var(--blood-red);
   border-color: rgba(139,26,26,0.3);
 }
+#bgmCycleBtn {
+  right: 60px;
+}
 
 /* Version label */
 .ver-label {
@@ -994,6 +997,29 @@ body {
   .quiz-evidence-img { width: 80px; height: 80px; }
   .result-score-num { font-size: 2.8em; }
 }
+
+/* BGM toast */
+.bgm-toast {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7em;
+  color: var(--brass);
+  background: var(--noir-card);
+  border: 1px solid var(--border-subtle);
+  padding: 8px 20px;
+  border-radius: 20px;
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+.bgm-toast.show {
+  opacity: 1;
+  transition: opacity 0.15s;
+}
 </style>
 </head>
 <body>
@@ -1003,7 +1029,8 @@ body {
 <div class="vignette" id="vignette"></div>
 <div class="spotlight" id="spotlight"></div>
 <button class="mute-btn" id="muteBtn" onclick="SoundEngine.toggleMute()" title="音效开关">🔊</button>
-<span class="ver-label">TERMINAL v1.3 · BGM</span>
+<button class="mute-btn" id="bgmCycleBtn" title="切换BGM">🎵</button>
+<span class="ver-label">TERMINAL v1.4 · SELECTOR</span>
 
 <div class="app-shell">
 
@@ -1384,28 +1411,38 @@ const SoundEngine = (function() {
     noiseBurst(t + 0.5, 120, 0.7, 0.18, 0.25, 'lowpass');
   }
 
-  // --- BGM: HTML5 Audio with crossfade ---
-  var bgmTracks = {
-    menu: 'bgm/bgm_menu.mp3',
-    game: 'bgm/bgm_game.mp3',
-    quiz: 'bgm/bgm_quiz.mp3'
-  };
-  var bgmAudio = {};
+  // --- BGM: HTML5 Audio, single track cyclable ---
+  var bgmFiles = [
+    'bgm_menu', 'bgm_game', 'bgm_quiz',
+    'bgm_alt1', 'bgm_alt2', 'bgm_alt3'
+  ];
+  var bgmIndex = 0;
+  var bgmAudio = null;
   var bgmCurrent = null;
-  var bgmCurrentKey = null;
+  var bgmPlaying = false;
   var bgmVolume = 0.55;
 
-  // Pre-create audio elements
-  (function() {
-    Object.keys(bgmTracks).forEach(function(key) {
-      var a = new Audio();
-      a.src = bgmTracks[key];
-      a.loop = true;
-      a.volume = 0;
-      a.preload = 'auto';
-      bgmAudio[key] = a;
-    });
-  })();
+  function bgmLoadTrack() {
+    var wasPlaying = bgmPlaying;
+    if (bgmPlaying) {
+      if (bgmCurrent) { bgmCurrent.pause(); bgmCurrent.currentTime = 0; }
+    }
+    if (bgmAudio) { bgmAudio.pause(); bgmAudio.currentTime = 0; bgmAudio = null; }
+    bgmCurrent = null;
+
+    var file = bgmFiles[bgmIndex] + '.mp3';
+    bgmAudio = new Audio('bgm/' + file);
+    bgmAudio.loop = true;
+    bgmAudio.volume = 0;
+    bgmAudio.preload = 'auto';
+
+    if (wasPlaying) {
+      bgmCurrent = bgmAudio;
+      bgmAudio.volume = bgmVolume;
+      var p = bgmAudio.play();
+      if (p && p.catch) p.catch(function(){});
+    }
+  }
 
   function bgmFade(audio, to, ms) {
     var steps = 20;
@@ -1420,44 +1457,66 @@ const SoundEngine = (function() {
     }, stepMs);
   }
 
-  function bgmPlay(track) {
+  function bgmPlay() {
     if (muted) return;
-    var target = bgmAudio[track];
-    if (!target) return;
-    if (bgmCurrent === target && target.volume >= bgmVolume - 0.01) return;
+    if (!bgmAudio) bgmLoadTrack();
+    if (bgmPlaying && bgmCurrent === bgmAudio) return;
+    if (!bgmAudio) return;
 
     // Fade out current
-    if (bgmCurrent && bgmCurrent !== target) {
+    if (bgmCurrent && bgmCurrent !== bgmAudio) {
       bgmFade(bgmCurrent, 0, 350);
-      setTimeout(function() {
-        if (bgmCurrent !== target) {
-          bgmCurrent.pause();
-          bgmCurrent.currentTime = 0;
-        }
-      }, 400);
+      var old = bgmCurrent;
+      setTimeout(function() { old.pause(); old.currentTime = 0; }, 400);
     }
 
-    // Fade in target
-    bgmCurrent = target;
-    bgmCurrentKey = track;
-    target.currentTime = 0;
-    var p = target.play();
+    bgmCurrent = bgmAudio;
+    bgmPlaying = true;
+    bgmAudio.currentTime = 0;
+    var p = bgmAudio.play();
     if (p && p.catch) p.catch(function(){});
-    bgmFade(target, bgmVolume, 500);
+    bgmFade(bgmAudio, bgmVolume, 500);
   }
 
   function bgmStop() {
+    bgmPlaying = false;
     if (bgmCurrent) {
       bgmFade(bgmCurrent, 0, 350);
       var a = bgmCurrent;
-      setTimeout(function() {
-        a.pause();
-        a.currentTime = 0;
-      }, 400);
+      setTimeout(function() { a.pause(); a.currentTime = 0; }, 400);
       bgmCurrent = null;
-      bgmCurrentKey = null;
     }
   }
+
+  function bgmCycle() {
+    bgmIndex = (bgmIndex + 1) % bgmFiles.length;
+    bgmLoadTrack();
+    if (bgmPlaying && !muted) {
+      bgmCurrent = bgmAudio;
+      bgmAudio.volume = bgmVolume;
+      var p = bgmAudio.play();
+      if (p && p.catch) p.catch(function(){});
+    }
+    // Show track name toast
+    var name = bgmFiles[bgmIndex].replace('bgm_', '').replace(/_/g, ' ');
+    showBgmToast(name);
+    // Save preference
+    try { localStorage.setItem('jd_bgm_index', bgmIndex); } catch(e) {}
+    return name;
+  }
+
+  function bgmGetName() {
+    return bgmFiles[bgmIndex].replace('bgm_', '').replace(/_/g, ' ');
+  }
+
+  // Load saved BGM preference
+  (function() {
+    try {
+      var saved = localStorage.getItem('jd_bgm_index');
+      if (saved !== null) bgmIndex = parseInt(saved) % bgmFiles.length;
+    } catch(e) {}
+    bgmLoadTrack();
+  })();
 
   function toggleMute() {
     init();
@@ -1470,7 +1529,7 @@ const SoundEngine = (function() {
     } else {
       btn.textContent = '🔊';
       btn.classList.remove('muted');
-      if (bgmCurrentKey) bgmPlay(bgmCurrentKey);
+      if (bgmPlaying) bgmPlay();
     }
     return muted;
   }
@@ -1492,7 +1551,7 @@ const SoundEngine = (function() {
     click: click, match: match, mismatch: mismatch, combo: combo,
     quizCorrect: quizCorrect, quizWrong: quizWrong,
     levelWin: levelWin, levelLose: levelLose,
-    bgmStop: bgmStop, bgmPlay: bgmPlay,
+    bgmStop: bgmStop, bgmPlay: bgmPlay, bgmCycle: bgmCycle, bgmGetName: bgmGetName,
     toggleMute: toggleMute, isMuted: isMuted
   };
 })();
@@ -1668,7 +1727,7 @@ function shake(el) {
    SCREEN NAV
    ============================================ */
 function showStartScreen() {
-	SoundEngine.bgmPlay('menu');
+	SoundEngine.bgmPlay();
   hideAll();
   document.getElementById('startScreen').classList.remove('hidden');
   document.getElementById('progressTrack').style.display = 'flex';
@@ -1718,7 +1777,7 @@ function skipBriefing() { startGame(state.currentCase); }
    GAME START
    ============================================ */
 function startGame(lv) {
-	SoundEngine.init(); SoundEngine.bgmPlay('game');
+	SoundEngine.init(); SoundEngine.bgmPlay();
   var c = CASES[lv];
   state.currentCase = lv;
   state.time = c.time;
@@ -1915,7 +1974,7 @@ function checkAllMatched() {
    QUIZ PHASE — Two question types mixed
    ============================================ */
 function startQuiz() {
-	SoundEngine.bgmPlay('quiz');
+	SoundEngine.bgmPlay();
   var c = CASES[state.currentCase];
   document.getElementById('grid').classList.add('hidden');
   var qp = document.getElementById('quizPanel');
@@ -2159,7 +2218,7 @@ function endGame(success) {
     document.getElementById('resultIcon').textContent = '⏰';
     document.getElementById('resultTitle').textContent = '时间耗尽';
 	SoundEngine.levelLose();
-    SoundEngine.bgmPlay('menu');
+    SoundEngine.bgmPlay();
     document.getElementById('resultTitle').className = 'result-heading lose';
     document.getElementById('finalScore').textContent = state.score;
     document.getElementById('finalGrade').textContent = '调查中断';
@@ -2280,7 +2339,28 @@ function resetGame() {
   }
   load();
   updateCaseCards();
+
+  // BGM cycle button
+  var cycleBtn = document.getElementById('bgmCycleBtn');
+  if (cycleBtn) {
+    cycleBtn.title = 'BGM: ' + SoundEngine.bgmGetName();
+    cycleBtn.addEventListener('click', function() {
+      SoundEngine.bgmCycle();
+      this.title = 'BGM: ' + SoundEngine.bgmGetName();
+    });
+  }
 })();
+
+// Toast helper
+function showBgmToast(name) {
+  var t = document.getElementById('bgmToast');
+  if (!t) return;
+  t.textContent = '🎵 ' + name;
+  t.classList.add('show');
+  clearTimeout(t._timeout);
+  t._timeout = setTimeout(function() { t.classList.remove('show'); }, 1800);
+}
 </script>
+<div class="bgm-toast" id="bgmToast"></div>
 </body>
 </html>
