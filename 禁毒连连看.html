@@ -1,0 +1,2213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>案件调查档案 · 禁毒连连看</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@700;900&display=swap" rel="stylesheet">
+<style>
+/* ============================================
+   NOIR VARIABLES
+   ============================================ */
+:root {
+  --noir-black:    #0d0b09;
+  --noir-warm:     #16130e;
+  --noir-card:     #1c1814;
+  --noir-surface:  #201c17;
+  --border-subtle: #2a2520;
+  --border-photo:  #3a3530;
+
+  --text-parchment:#d4c8b8;
+  --text-faded:    #8a8075;
+  --text-dim:      #5a5450;
+
+  --blood-red:     #8b1a1a;
+  --blood-glow:    rgba(139,26,26,0.4);
+  --brass:         #b8a06e;
+  --brass-glow:    rgba(184,160,110,0.35);
+  --moss:          #4a6b3a;
+  --moss-glow:     rgba(74,107,58,0.4);
+
+  --ink-blue:      #2a3a50;
+  --stamp-red:     #a01020;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 14px;
+}
+
+/* ============================================
+   RESET & BASE — Noir atmosphere
+   ============================================ */
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  font-family: 'Noto Sans SC', sans-serif;
+  background: var(--noir-black);
+  color: var(--text-parchment);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================
+   ATMOSPHERE LAYER — Fog, grain, vignette
+   ============================================ */
+.atmo-fog {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse at 15% 40%, rgba(139,26,26,0.035) 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 55%, rgba(184,160,110,0.025) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 70%, rgba(42,58,80,0.03) 0%, transparent 60%);
+  animation: fogDrift 28s ease-in-out infinite;
+}
+@keyframes fogDrift {
+  0%,100% { transform: translateX(0) translateY(0); }
+  25% { transform: translateX(1.5%) translateY(-0.5%); }
+  50% { transform: translateX(-1%) translateY(1%); }
+  75% { transform: translateX(0.5%) translateY(-1%); }
+}
+
+.atmo-grain {
+  position: fixed;
+  inset: 0;
+  opacity: 0.032;
+  pointer-events: none;
+  z-index: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='5' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+}
+
+.vignette {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background: radial-gradient(ellipse at center, transparent 48%, rgba(13,11,9,0.7) 100%);
+  transition: background 0.5s;
+}
+.vignette.urgent {
+  background: radial-gradient(ellipse at center, transparent 40%, rgba(139,26,26,0.35) 100%);
+  animation: urgentVignette 1s ease-in-out infinite;
+}
+@keyframes urgentVignette {
+  0%,100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+/* Spotlight — follows active card */
+.spotlight {
+  position: fixed;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(184,160,110,0.06) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 3;
+  opacity: 0;
+  transition: opacity 0.3s;
+  transform: translate(-50%, -50%);
+}
+.spotlight.on { opacity: 1; }
+
+/* ============================================
+   MUTE BUTTON
+   ============================================ */
+.mute-btn {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 110;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--noir-card);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-faded);
+  font-size: 1.1em;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s ease;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.mute-btn:hover {
+  border-color: var(--brass);
+  color: var(--brass);
+  box-shadow: 0 0 14px rgba(184,160,110,0.12);
+}
+.mute-btn.muted {
+  color: var(--blood-red);
+  border-color: rgba(139,26,26,0.3);
+}
+
+/* ============================================
+   APP SHELL
+   ============================================ */
+.app-shell {
+  position: relative;
+  z-index: 5;
+  width: 100%;
+  max-width: 680px;
+  padding: 24px 18px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ============================================
+   TYPOGRAPHY — Detective dossier feel
+   ============================================ */
+.main-title {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 2.5em;
+  font-weight: 900;
+  color: var(--text-parchment);
+  letter-spacing: 0.08em;
+  text-align: center;
+  margin-bottom: 4px;
+}
+.main-title .hl {
+  color: var(--blood-red);
+}
+.subtitle {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72em;
+  color: var(--text-faded);
+  letter-spacing: 0.14em;
+  text-align: center;
+  margin-bottom: 26px;
+  text-transform: uppercase;
+}
+
+.typewriter {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-parchment);
+}
+.handwrite {
+  font-family: 'Ma Shan Zheng', cursive;
+  color: var(--text-faded);
+}
+
+/* ============================================
+   PROGRESS — Film reel dots
+   ============================================ */
+.progress-track {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 28px;
+}
+.progress-node {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--border-subtle);
+  background: var(--noir-warm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72em;
+  color: var(--text-dim);
+  transition: all 0.5s ease;
+  position: relative;
+  z-index: 1;
+}
+.progress-node.completed {
+  background: var(--moss);
+  border-color: var(--moss);
+  color: #fff;
+  box-shadow: 0 0 14px var(--moss-glow);
+}
+.progress-node.active {
+  background: var(--brass);
+  border-color: var(--brass);
+  color: var(--noir-black);
+  box-shadow: 0 0 20px var(--brass-glow);
+  animation: flickerNode 3s ease-in-out infinite;
+}
+@keyframes flickerNode {
+  0%,100% { box-shadow: 0 0 14px var(--brass-glow); }
+  50% { box-shadow: 0 0 30px rgba(184,160,110,0.55); }
+}
+.progress-rail {
+  width: 50px;
+  height: 1px;
+  background: var(--border-subtle);
+  transition: background 0.5s;
+}
+.progress-rail.done { background: var(--moss); }
+
+/* ============================================
+   CASE FILE CARDS — Start screen
+   ============================================ */
+.case-select {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-bottom: 22px;
+  flex-wrap: wrap;
+}
+
+.case-file {
+  background: linear-gradient(170deg, var(--noir-card) 0%, var(--noir-warm) 100%);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 18px 14px 14px;
+  width: 195px;
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1.2);
+  position: relative;
+  text-align: center;
+}
+.case-file::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 20px; right: 20px;
+  height: 3px;
+  background: var(--border-subtle);
+  border-radius: 0 0 3px 3px;
+  transition: background 0.3s;
+}
+.case-file:hover:not(.locked) {
+  transform: translateY(-5px);
+  border-color: var(--brass);
+  box-shadow: 0 12px 35px rgba(0,0,0,0.5), 0 0 25px rgba(184,160,110,0.12);
+}
+.case-file:hover:not(.locked)::before {
+  background: var(--brass);
+}
+.case-file.selected {
+  border-color: var(--brass);
+  box-shadow: 0 0 24px var(--brass-glow);
+}
+.case-file.selected::before {
+  background: var(--brass);
+}
+.case-file.locked {
+  opacity: 0.38;
+  cursor: not-allowed;
+  filter: grayscale(40%);
+}
+
+.case-ref {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.62em;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+  margin-bottom: 10px;
+}
+.case-icon { font-size: 2.2em; margin-bottom: 6px; }
+.case-name {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 1.05em;
+  font-weight: 700;
+  color: var(--text-parchment);
+  margin-bottom: 3px;
+}
+.case-meta {
+  font-size: 0.68em;
+  color: var(--text-faded);
+  margin-bottom: 10px;
+}
+
+.case-preview {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+  margin: 0 auto 8px;
+  max-height: 100px;
+  overflow-y: auto;
+}
+.case-preview-item {
+  background: rgba(255,255,255,0.02);
+  border-radius: 2px;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 0.55em;
+  color: var(--text-faded);
+}
+.case-preview-item img {
+  width: 20px; height: 20px;
+  object-fit: contain;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.case-badge {
+  display: inline-block;
+  padding: 3px 12px;
+  border-radius: 12px;
+  font-size: 0.65em;
+  letter-spacing: 0.05em;
+}
+.badge-open { background: rgba(139,26,26,0.2); color: var(--blood-red); }
+.badge-done { background: rgba(74,107,58,0.2); color: var(--moss); }
+.badge-locked { background: rgba(255,255,255,0.03); color: var(--text-dim); }
+
+/* ============================================
+   BUTTONS — Noir refined
+   ============================================ */
+.btn {
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 0.9em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 13px 38px;
+  border-radius: 3px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+.btn-primary {
+  background: var(--blood-red);
+  color: #fff;
+  box-shadow: 0 4px 18px var(--blood-glow);
+}
+.btn-primary:hover {
+  box-shadow: 0 6px 28px rgba(139,26,26,0.55);
+  transform: translateY(-2px);
+}
+.btn-primary:active { transform: scale(0.95); }
+
+.btn-secondary {
+  background: transparent;
+  color: var(--text-parchment);
+  border: 1px solid var(--border-subtle);
+}
+.btn-secondary:hover {
+  background: rgba(255,255,255,0.03);
+  border-color: var(--border-photo);
+}
+.btn-secondary:active { transform: scale(0.95); }
+
+.btn-brass {
+  background: transparent;
+  color: var(--brass);
+  border: 1px solid var(--brass);
+}
+.btn-brass:hover {
+  background: rgba(184,160,110,0.08);
+  box-shadow: 0 0 18px rgba(184,160,110,0.15);
+}
+.btn-brass:active { transform: scale(0.95); }
+
+.btn-quiz-opt {
+  display: block;
+  width: 100%;
+  padding: 14px 18px;
+  margin: 6px 0;
+  background: var(--noir-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-parchment);
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 0.9em;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+}
+.btn-quiz-opt:hover {
+  border-color: var(--brass);
+  background: rgba(184,160,110,0.06);
+}
+.btn-quiz-opt.correct-flash {
+  border-color: var(--moss) !important;
+  background: rgba(74,107,58,0.2) !important;
+}
+.btn-quiz-opt.wrong-flash {
+  border-color: var(--blood-red) !important;
+  background: rgba(139,26,26,0.15) !important;
+}
+
+.btn-group {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+/* ============================================
+   CASE BRIEFING — Typewriter narrative
+   ============================================ */
+.briefing-panel {
+  background: var(--noir-warm);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 28px 24px;
+  max-width: 520px;
+  width: 100%;
+  margin-bottom: 18px;
+}
+.briefing-stamp {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6em;
+  color: var(--blood-red);
+  letter-spacing: 0.15em;
+  border: 1px solid var(--blood-red);
+  display: inline-block;
+  padding: 2px 8px;
+  margin-bottom: 14px;
+  transform: rotate(-3deg);
+}
+.briefing-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8em;
+  color: var(--text-parchment);
+  line-height: 1.9;
+  min-height: 60px;
+}
+.briefing-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 14px;
+  background: var(--text-parchment);
+  animation: cursorBlink 0.7s step-end infinite;
+  vertical-align: middle;
+  margin-left: 2px;
+}
+@keyframes cursorBlink {
+  0%,100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* ============================================
+   GAME SCREEN
+   ============================================ */
+.game-container { width: 100%; }
+
+.game-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.back-link {
+  background: none;
+  border: none;
+  color: var(--text-faded);
+  cursor: pointer;
+  font-size: 0.78em;
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.05em;
+  transition: color 0.2s;
+}
+.back-link:hover { color: var(--blood-red); }
+
+/* Stats Bar */
+.stats-bar {
+  display: flex;
+  gap: 1px;
+  margin-bottom: 16px;
+  background: rgba(32,28,23,0.8);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.stat-cell {
+  flex: 1;
+  text-align: center;
+  padding: 10px 6px;
+  position: relative;
+}
+.stat-cell + .stat-cell { border-left: 1px solid var(--border-subtle); }
+.stat-label {
+  font-size: 0.62em;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+  margin-bottom: 3px;
+}
+.stat-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.5em;
+  font-weight: 700;
+  transition: color 0.3s;
+}
+.stat-val.time { color: var(--brass); }
+.stat-val.time.critical {
+  color: var(--blood-red);
+  animation: urgentPulse 0.7s ease-in-out infinite;
+}
+.stat-val.score { color: var(--moss); }
+.stat-val.combo { color: var(--blood-red); }
+.stat-val.combo.on-fire { text-shadow: 0 0 14px var(--blood-glow); }
+
+/* ============================================
+   EVIDENCE CARD GRID
+   ============================================ */
+.grid {
+  display: grid;
+  justify-content: center;
+  margin: 0 auto;
+}
+
+.evidence-card {
+  background: var(--noir-card);
+  border: 2px solid var(--border-photo);
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  box-shadow:
+    0 3px 12px rgba(0,0,0,0.4),
+    inset 0 1px 0 rgba(255,255,255,0.015);
+  transition: border-color 0.2s, box-shadow 0.2s;
+  transform: rotate(var(--tilt, 0deg));
+}
+
+/* Photo-paper inner border */
+.evidence-card::after {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border: 1px solid rgba(255,255,255,0.04);
+  border-radius: 1px;
+  pointer-events: none;
+  transition: border-color 0.2s;
+}
+
+.evidence-card:hover {
+  border-color: var(--brass);
+  box-shadow:
+    0 6px 20px rgba(0,0,0,0.5),
+    0 0 18px rgba(184,160,110,0.1);
+  z-index: 10;
+  transform: rotate(0deg) scale(1.06);
+}
+
+.evidence-card.selected {
+  border-color: var(--brass);
+  box-shadow:
+    0 6px 24px rgba(0,0,0,0.5),
+    0 0 32px var(--brass-glow);
+  transform: scale(1.08);
+  z-index: 11;
+}
+
+.evidence-card.mismatch {
+  animation: cardShake 0.35s ease;
+  border-color: var(--blood-red) !important;
+  box-shadow: 0 0 22px var(--blood-glow) !important;
+}
+@keyframes cardShake {
+  0%,100% { transform: translateX(0); }
+  20% { transform: translateX(-5px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+
+.evidence-card.confirmed {
+  animation: cardConfirm 0.5s ease forwards;
+  pointer-events: none;
+}
+@keyframes cardConfirm {
+  0% { border-color: var(--moss); box-shadow: 0 0 28px var(--moss-glow); }
+  25% { transform: scale(1.12); }
+  100% { opacity: 0; transform: scale(0); }
+}
+
+@keyframes cardArrive {
+  from { opacity: 0; transform: translateY(14px) scale(0.9) rotate(var(--tilt, 0deg)); }
+  to { opacity: 1; transform: translateY(0) scale(1) rotate(var(--tilt, 0deg)); }
+}
+
+.evidence-card.entering {
+  animation: cardArrive 0.45s ease both;
+}
+
+.card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 1px;
+}
+.card-label {
+  color: var(--text-parchment);
+  line-height: 1.3;
+  font-weight: 500;
+  text-align: center;
+}
+
+/* ============================================
+   QUIZ PANEL — Post-match classification
+   ============================================ */
+.quiz-panel {
+  background: var(--noir-warm);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 24px 20px;
+  text-align: center;
+}
+.quiz-header {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65em;
+  color: var(--text-dim);
+  letter-spacing: 0.12em;
+  margin-bottom: 6px;
+}
+.quiz-title {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 1.1em;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+.quiz-evidence-img {
+  width: 100px;
+  height: 100px;
+  object-fit: contain;
+  background: var(--noir-card);
+  border: 2px solid var(--border-photo);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  margin: 0 auto 12px;
+  display: block;
+}
+.quiz-question {
+  font-size: 0.88em;
+  color: var(--text-parchment);
+  margin-bottom: 14px;
+}
+.quiz-timer-bar {
+  height: 3px;
+  background: var(--border-subtle);
+  border-radius: 2px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+.quiz-timer-fill {
+  height: 100%;
+  background: var(--brass);
+  transition: width 0.1s linear;
+  border-radius: 2px;
+}
+.quiz-timer-fill.running-out {
+  background: var(--blood-red);
+  animation: urgentPulse 0.6s ease-in-out infinite;
+}
+.quiz-counter {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7em;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.quiz-answer-note {
+  font-size: 0.8em;
+  color: var(--text-faded);
+  margin-top: 10px;
+  min-height: 20px;
+}
+
+/* Image-choice options for Type B questions */
+.quiz-img-options {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.quiz-img-opt {
+  width: 90px;
+  height: 90px;
+  background: var(--noir-card);
+  border: 2px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+  overflow: hidden;
+  padding: 6px;
+}
+.quiz-img-opt:hover {
+  border-color: var(--brass);
+  box-shadow: 0 0 16px rgba(184,160,110,0.12);
+  transform: translateY(-2px);
+}
+.quiz-img-opt:active {
+  transform: scale(0.94);
+}
+.quiz-img-opt img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 2px;
+}
+.quiz-img-opt.correct-flash {
+  border-color: var(--moss) !important;
+  box-shadow: 0 0 20px var(--moss-glow) !important;
+}
+.quiz-img-opt.wrong-flash {
+  border-color: var(--blood-red) !important;
+  box-shadow: 0 0 18px var(--blood-glow) !important;
+}
+
+/* Name display for Type B questions */
+.quiz-name-display {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 1.5em;
+  font-weight: 900;
+  color: var(--text-parchment);
+  margin-bottom: 14px;
+  letter-spacing: 0.06em;
+}
+
+/* ============================================
+   RESULT SCREENS
+   ============================================ */
+.result-screen { text-align: center; }
+.result-icon { font-size: 3em; margin-bottom: 6px; }
+.result-heading {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 1.8em;
+  font-weight: 900;
+  margin-bottom: 10px;
+}
+.result-heading.win { color: var(--moss); }
+.result-heading.lose { color: var(--blood-red); }
+
+.result-score-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 3.8em;
+  font-weight: 700;
+  color: var(--text-parchment);
+  margin-bottom: 4px;
+}
+.result-rank {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 1.15em;
+  color: var(--brass);
+  letter-spacing: 0.08em;
+  margin-bottom: 18px;
+}
+
+.stats-row {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+.stat-card {
+  background: var(--noir-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 14px 24px;
+  text-align: center;
+}
+.stat-card .sc-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.4em;
+  font-weight: 700;
+  color: var(--text-parchment);
+}
+.stat-card .sc-lbl {
+  font-size: 0.65em;
+  color: var(--text-faded);
+  margin-top: 3px;
+}
+
+.final-rank-badge {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 2.2em;
+  font-weight: 900;
+  color: var(--brass);
+  margin-bottom: 6px;
+}
+.final-message {
+  color: var(--text-faded);
+  margin-bottom: 18px;
+  line-height: 1.7;
+}
+
+/* ============================================
+   MODAL
+   ============================================ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(13,11,9,0.88);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal-panel {
+  background: var(--noir-warm);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 30px 32px;
+  max-width: 420px;
+  width: 90%;
+  text-align: center;
+}
+.modal-panel h2 {
+  font-family: 'Noto Serif SC', serif;
+  margin-bottom: 14px;
+  font-size: 1.2em;
+}
+.modal-panel p {
+  font-size: 0.82em;
+  color: var(--text-faded);
+  line-height: 1.7;
+  text-align: left;
+}
+.modal-panel ul {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0;
+  text-align: left;
+}
+.modal-panel ul li {
+  font-size: 0.82em;
+  color: var(--text-faded);
+  line-height: 1.7;
+  padding-left: 14px;
+  position: relative;
+}
+.modal-panel ul li::before {
+  content: '—';
+  color: var(--blood-red);
+  position: absolute;
+  left: 0;
+}
+
+/* ============================================
+   FEEDBACK OVERLAY
+   ============================================ */
+.feedback-pop {
+  position: fixed;
+  top: 44%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 2.2em;
+  font-weight: 700;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 80;
+  text-shadow: 0 0 20px currentColor;
+}
+.feedback-pop.show {
+  animation: feedbackFly 0.75s ease forwards;
+}
+.feedback-pop.good { color: var(--moss); }
+.feedback-pop.bad { color: var(--blood-red); }
+.feedback-pop.bonus { color: var(--brass); }
+
+@keyframes feedbackFly {
+  0% { opacity:0; transform: translate(-50%,-50%) scale(0.3) rotate(-6deg); }
+  18% { opacity:1; transform: translate(-50%,-50%) scale(1.12) rotate(1deg); }
+  35% { transform: translate(-50%,-50%) scale(0.95) rotate(0deg); }
+  65% { opacity:1; transform: translate(-50%,-50%) scale(1) translateY(-2px); }
+  100% { opacity:0; transform: translate(-50%,-50%) scale(0.6) translateY(-18px); }
+}
+
+/* ============================================
+   CELEBRATION
+   ============================================ */
+.celebration-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+}
+.ember {
+  position: absolute;
+  top: 50%; left: 50%;
+  border-radius: 50%;
+  animation: emberFly 2s cubic-bezier(0.05,0.85,0.25,1) both;
+}
+@keyframes emberFly {
+  0% { transform: translate(0,0) scale(1); opacity:1; }
+  100% { transform: translate(var(--ex), calc(var(--ey) + 80px)) scale(0); opacity:0; }
+}
+.shred {
+  position: absolute;
+  top: -15px;
+  border-radius: 2px;
+  animation: shredFall var(--dur) ease-in both;
+  animation-delay: var(--lag);
+}
+@keyframes shredFall {
+  0% { transform: translateY(0) rotate(0deg) scale(1); opacity:1; }
+  100% { transform: translateY(105vh) rotate(var(--spin)) scale(0.4); opacity:0; }
+}
+
+/* ============================================
+   UTILITY
+   ============================================ */
+.hidden { display: none !important; }
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+@media (max-width: 680px) {
+  .case-select { gap: 10px; }
+  .case-file { width: 155px; padding: 14px 10px 10px; }
+  .case-preview { max-height: 75px; }
+  .main-title { font-size: 1.9em; }
+  .briefing-panel { padding: 20px 16px; }
+  .briefing-text { font-size: 0.7em; }
+  .progress-rail { width: 34px; }
+}
+@media (max-width: 460px) {
+  .app-shell { padding: 14px 8px 28px; }
+  .case-file { width: 100%; max-width: 250px; }
+  .case-select { flex-direction: column; align-items: center; }
+  .main-title { font-size: 1.6em; }
+  .btn { padding: 11px 28px; font-size: 0.82em; }
+  .stats-bar { flex-wrap: nowrap; }
+  .stat-val { font-size: 1.2em; }
+  .quiz-evidence-img { width: 80px; height: 80px; }
+  .result-score-num { font-size: 2.8em; }
+}
+</style>
+</head>
+<body>
+
+<div class="atmo-fog"></div>
+<div class="atmo-grain"></div>
+<div class="vignette" id="vignette"></div>
+<div class="spotlight" id="spotlight"></div>
+<button class="mute-btn" id="muteBtn" onclick="SoundEngine.toggleMute()" title="音效开关">🔊</button>
+
+<div class="app-shell">
+
+  <!-- Progress -->
+  <div class="progress-track" id="progressTrack">
+    <div class="progress-node" id="node1">1</div>
+    <div class="progress-rail" id="rail1"></div>
+    <div class="progress-node" id="node2">2</div>
+    <div class="progress-rail" id="rail2"></div>
+    <div class="progress-node" id="node3">3</div>
+  </div>
+
+  <!-- Title -->
+  <h1 class="main-title">案件<span class="hl">调查</span>档案</h1>
+  <p class="subtitle">禁毒物证比对终端 · Anti-Drug Evidence Terminal</p>
+
+  <!-- ============ START SCREEN ============ -->
+  <div id="startScreen">
+    <div class="case-select">
+      <div class="case-file selected" id="caseFile1" onclick="selectCase(1)">
+        <div class="case-ref">CASE FILE 001</div>
+        <div class="case-icon">🌿</div>
+        <div class="case-name">传统毒品</div>
+        <div class="case-meta">10 件物证 · 150 秒</div>
+        <div class="case-preview" id="preview1"></div>
+        <span class="case-badge badge-open" id="caseBadge1">待调查</span>
+      </div>
+      <div class="case-file locked" id="caseFile2" onclick="selectCase(2)">
+        <div class="case-ref">CASE FILE 002</div>
+        <div class="case-icon">⚗️</div>
+        <div class="case-name">新型毒品</div>
+        <div class="case-meta">10 件物证 · 150 秒</div>
+        <div class="case-preview" id="preview2"></div>
+        <span class="case-badge badge-locked" id="caseBadge2">未解锁</span>
+      </div>
+      <div class="case-file locked" id="caseFile3" onclick="selectCase(3)">
+        <div class="case-ref">CASE FILE 003</div>
+        <div class="case-icon">🎭</div>
+        <div class="case-name">伪装毒品</div>
+        <div class="case-meta">18 件物证 · 240 秒</div>
+        <div class="case-preview" id="preview3"></div>
+        <span class="case-badge badge-locked" id="caseBadge3">未解锁</span>
+      </div>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-primary" id="startBtn" onclick="startCase()">展开调查</button>
+      <button class="btn btn-secondary" onclick="showInfo()">终端说明</button>
+    </div>
+  </div>
+
+  <!-- ============ BRIEFING SCREEN ============ -->
+  <div class="hidden" id="briefingScreen">
+    <div class="briefing-panel">
+      <div class="briefing-stamp">CLASSIFIED</div>
+      <div class="briefing-text" id="briefingText"></div>
+      <div style="margin-top:16px;text-align:right">
+        <span class="handwrite" style="font-size:1.2em;" id="briefingSig"></span>
+      </div>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-primary" id="briefingStartBtn">进入案卷</button>
+      <button class="btn btn-secondary" onclick="skipBriefing()">跳过简报</button>
+    </div>
+  </div>
+
+  <!-- ============ GAME SCREEN ============ -->
+  <div class="game-container hidden" id="gameScreen">
+    <div class="game-header">
+      <button class="back-link" onclick="confirmQuit()">[ 退出 ]</button>
+      <div style="text-align:right">
+        <div style="font-family:'Noto Serif SC',serif;font-size:1em;font-weight:700" id="gameTitle">案卷 001</div>
+        <div style="font-size:0.7em;color:var(--text-faded)" id="gameDesc">物证比对中</div>
+      </div>
+    </div>
+    <div class="stats-bar">
+      <div class="stat-cell"><div class="stat-label">剩余时间</div><div class="stat-val time" id="timeDisplay">150</div></div>
+      <div class="stat-cell"><div class="stat-label">确认数</div><div class="stat-val score" id="scoreDisplay">0</div></div>
+      <div class="stat-cell"><div class="stat-label">连击</div><div class="stat-val combo" id="comboDisplay">0</div></div>
+    </div>
+    <!-- MATCHING PHASE -->
+    <div class="grid" id="grid"></div>
+    <!-- QUIZ PHASE -->
+    <div class="quiz-panel hidden" id="quizPanel">
+      <div class="quiz-header">FIELD REPORT · 物证确认测验</div>
+      <div class="quiz-title" id="quizTitle">请根据提示选出正确答案</div>
+      <img class="quiz-evidence-img" id="quizImg" src="" alt="">
+      <div class="quiz-name-display hidden" id="quizNameDisplay"></div>
+      <div class="quiz-question" id="quizQuestion"></div>
+      <div class="quiz-timer-bar"><div class="quiz-timer-fill" id="quizTimerFill"></div></div>
+      <div id="quizOptions"></div>
+      <div class="quiz-img-options hidden" id="quizImgOptions"></div>
+      <div class="quiz-counter" id="quizCounter"></div>
+      <div class="quiz-answer-note" id="quizNote"></div>
+    </div>
+  </div>
+
+  <!-- ============ RESULT SCREEN ============ -->
+  <div class="result-screen hidden" id="endScreen">
+    <div class="result-icon" id="resultIcon"></div>
+    <div class="result-heading" id="resultTitle"></div>
+    <div class="result-score-num" id="finalScore">0</div>
+    <div class="result-rank" id="finalGrade"></div>
+    <div class="stats-row">
+      <div class="stat-card"><div class="sc-val" id="statTime">0</div><div class="sc-lbl">剩余时间</div></div>
+      <div class="stat-card"><div class="sc-val" id="statMatches">0</div><div class="sc-lbl">物证确认</div></div>
+      <div class="stat-card"><div class="sc-val" id="statQuiz">0</div><div class="sc-lbl">分类正确</div></div>
+    </div>
+    <div class="btn-group" id="resultActions"></div>
+  </div>
+
+  <!-- ============ COMPLETE SCREEN ============ -->
+  <div class="result-screen hidden" id="completeScreen">
+    <div class="result-icon">🏆</div>
+    <div class="result-heading win">全部案卷告破</div>
+    <div class="final-rank-badge" id="finalRank">禁毒专家</div>
+    <div class="final-message">所有物证均已确认归档，调查圆满结束。</div>
+    <div class="stats-row">
+      <div class="stat-card"><div class="sc-val" id="totalScore">0</div><div class="sc-lbl">总得分</div></div>
+      <div class="stat-card"><div class="sc-val" id="totalLevels">3</div><div class="sc-lbl">结案数</div></div>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="resetGame()">重新调查</button>
+      <button class="btn btn-secondary" onclick="showStartScreen()">返回案卷室</button>
+    </div>
+  </div>
+
+  <!-- ============ MODALS ============ -->
+  <div class="modal-overlay hidden" id="infoModal">
+    <div class="modal-panel">
+      <h2>终端操作说明</h2>
+      <p>本终端用于禁毒物证比对训练，共包含三个案卷。每个案卷分为两个阶段：</p>
+      <ul>
+        <li><strong>物证比对</strong>：将物证照片与名称标签正确配对</li>
+        <li><strong>分类归档</strong>：比对完成后，对物证进行正确分类</li>
+      </ul>
+      <p>正确比对：+10 分，+额外时间<br>错误比对：-1 分，-时间<br>分类正确：+15 分<br>连续正确获得连击加成</p>
+      <button class="btn btn-primary" onclick="closeInfo()" style="margin-top:16px">确认</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="quitModal">
+    <div class="modal-panel">
+      <h2>中断调查</h2>
+      <p>当前案卷调查尚未完成，确定退出吗？</p>
+      <div class="btn-group" style="margin-top:18px">
+        <button class="btn btn-primary" onclick="forceQuit()">确定退出</button>
+        <button class="btn btn-secondary" onclick="closeQuit()">继续调查</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="feedback-pop" id="feedback"></div>
+<div class="celebration-layer" id="celebration"></div>
+
+<script>
+/* ============================================
+   SOUND ENGINE — Web Audio API
+   Noir cinematic sound design
+   ============================================ */
+const SoundEngine = (function() {
+  let ctx = null;
+  let masterGain = null;
+  let muted = false;
+  let bgmNodes = [];
+  let bgmGain = null;
+  let bgmPlaying = false;
+
+  function init() {
+    if (ctx) return;
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = ctx.createGain();
+    masterGain.gain.value = 0.55;
+    masterGain.connect(ctx.destination);
+  }
+
+  function resume() {
+    if (ctx && ctx.state === 'suspended') ctx.resume();
+  }
+
+  function now() { return ctx.currentTime; }
+
+  function gainNode(val, parent) {
+    var g = ctx.createGain();
+    g.gain.value = val;
+    g.connect(parent || masterGain);
+    return g;
+  }
+
+  // --- CLICK: paper / typewriter tick ---
+  function click() {
+    if (!ctx || muted) return;
+    resume();
+    var t = now();
+    var g = gainNode(0.16);
+    var osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(900, t);
+    osc.frequency.exponentialRampToValueAtTime(220, t + 0.025);
+    osc.connect(g);
+    osc.start(t); osc.stop(t + 0.028);
+    var buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.016), ctx.sampleRate);
+    var d = buf.getChannelData(0);
+    for (var i = 0; i < d.length; i++) d[i] = (Math.random() - 0.5) * (1 - i / d.length);
+    var noise = ctx.createBufferSource();
+    noise.buffer = buf;
+    var ng = gainNode(0.06);
+    noise.connect(ng);
+    noise.start(t);
+  }
+
+  // --- MATCH: brass uptick ---
+  function match() {
+    if (!ctx || muted) return;
+    resume();
+    var t = now();
+    var notes = [523.25, 659.25];
+    notes.forEach(function(freq, i) {
+      var g = gainNode(0.2);
+      var osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      osc.connect(g);
+      var s = t + i * 0.06;
+      g.gain.setValueAtTime(0.2, s);
+      g.gain.exponentialRampToValueAtTime(0.001, s + 0.26);
+      osc.start(s); osc.stop(s + 0.28);
+    });
+    var g2 = gainNode(0.07);
+    var osc2 = ctx.createOscillator();
+    osc2.type = 'sine';
+    osc2.frequency.value = 1046.5;
+    osc2.connect(g2);
+    g2.gain.setValueAtTime(0.07, t + 0.06);
+    g2.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
+    osc2.start(t + 0.06); osc2.stop(t + 0.4);
+  }
+
+  // --- MISMATCH: low thud ---
+  function mismatch() {
+    if (!ctx || muted) return;
+    resume();
+    var t = now();
+    var g = gainNode(0.18);
+    var osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(90, t);
+    osc.frequency.exponentialRampToValueAtTime(32, t + 0.16);
+    osc.connect(g);
+    g.gain.setValueAtTime(0.18, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    osc.start(t); osc.stop(t + 0.2);
+  }
+
+  // --- COMBO: higher sparkle ---
+  function combo() {
+    if (!ctx || muted) return;
+    resume();
+    var t = now();
+    [784, 988, 1175].forEach(function(f, i) {
+      var g = gainNode(0.09);
+      var osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = f;
+      osc.connect(g);
+      var s = t + i * 0.035;
+      g.gain.setValueAtTime(0.09, s);
+      g.gain.exponentialRampToValueAtTime(0.001, s + 0.14);
+      osc.start(s); osc.stop(s + 0.15);
+    });
+  }
+
+  // --- QUIZ CORRECT: stamp confirmation ---
+  function quizCorrect() {
+    if (!ctx || muted) return;
+    resume();
+    var t = now();
+    var g = gainNode(0.18);
+    var osc = ctx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(440, t);
+    osc.frequency.setValueAtTime(660, t + 0.05);
+    osc.frequency.setValueAtTime(880, t + 0.1);
+    osc.connect(g);
+    g.gain.setValueAtTime(0.18, t);
+    g.gain.setValueAtTime(0.18, t + 0.11);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    osc.start(t); osc.stop(t + 0.22);
+  }
+
+  // --- QUIZ WRONG ---
+  function quizWrong() {
+    if (!ctx || muted) return;
+    resume();
+    var t = now();
+    [440, 330].forEach(function(f, i) {
+      var g = gainNode(0.13);
+      var osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.value = f;
+      osc.connect(g);
+      var s = t + i * 0.05;
+      g.gain.setValueAtTime(0.13, s);
+      g.gain.exponentialRampToValueAtTime(0.001, s + 0.14);
+      osc.start(s); osc.stop(s + 0.15);
+    });
+  }
+
+  // --- LEVEL WIN: chord arpeggio ---
+  function levelWin() {
+    if (!ctx || muted) return;
+    resume();
+    var t = now();
+    [261.63, 329.63, 392, 523.25, 659.25].forEach(function(f, i) {
+      var g = gainNode(0.14);
+      var osc = ctx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.value = f;
+      osc.connect(g);
+      var s = t + i * 0.09;
+      g.gain.setValueAtTime(0.14, s);
+      g.gain.exponentialRampToValueAtTime(0.001, s + 0.5);
+      osc.start(s); osc.stop(s + 0.55);
+    });
+    var g2 = gainNode(0.1);
+    var osc2 = ctx.createOscillator();
+    osc2.type = 'sine';
+    osc2.frequency.value = 130.81;
+    osc2.connect(g2);
+    g2.gain.setValueAtTime(0.1, t);
+    g2.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
+    osc2.start(t); osc2.stop(t + 0.95);
+  }
+
+  // --- LEVEL LOSE: descending slide ---
+  function levelLose() {
+    if (!ctx || muted) return;
+    resume();
+    var t = now();
+    var g = gainNode(0.16);
+    var osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(220, t);
+    osc.frequency.exponentialRampToValueAtTime(38, t + 0.65);
+    osc.connect(g);
+    g.gain.setValueAtTime(0.16, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+    osc.start(t); osc.stop(t + 0.75);
+    var g2 = gainNode(0.1);
+    var osc2 = ctx.createOscillator();
+    osc2.type = 'sine';
+    osc2.frequency.value = 50;
+    osc2.connect(g2);
+    g2.gain.setValueAtTime(0.1, t + 0.25);
+    g2.gain.exponentialRampToValueAtTime(0.001, t + 1.1);
+    osc2.start(t + 0.25); osc2.stop(t + 1.15);
+  }
+
+  // --- BGM: dark ambient drone ---
+  function bgmStart() {
+    if (!ctx || muted || bgmPlaying) return;
+    resume();
+    bgmPlaying = true;
+    bgmGain = gainNode(0.04);
+    [41.2, 55, 65.4].forEach(function(freq) {
+      var osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      var lfo = ctx.createOscillator();
+      lfo.type = 'sine';
+      lfo.frequency.value = 0.12 + Math.random() * 0.18;
+      var lfoGain = ctx.createGain();
+      lfoGain.gain.value = 1.2;
+      lfo.connect(lfoGain);
+      lfoGain.connect(osc.frequency);
+      lfo.start();
+      var g = ctx.createGain();
+      g.gain.value = 0.2 + Math.random() * 0.12;
+      osc.connect(g);
+      g.connect(bgmGain);
+      osc.start();
+      bgmNodes.push(osc, lfo, g, lfoGain);
+    });
+    // Filtered noise texture
+    var buf = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);
+    var ch = buf.getChannelData(0);
+    for (var i = 0; i < ch.length; i++) ch[i] = (Math.random() - 0.5) * 0.03;
+    var ns = ctx.createBufferSource();
+    ns.buffer = buf;
+    ns.loop = true;
+    var bp = ctx.createBiquadFilter();
+    bp.type = 'lowpass';
+    bp.frequency.value = 180;
+    bp.Q.value = 0.5;
+    var ng = ctx.createGain();
+    ng.gain.value = 0.12;
+    ns.connect(bp);
+    bp.connect(ng);
+    ng.connect(bgmGain);
+    ns.start();
+    bgmNodes.push(ns, bp, ng);
+  }
+
+  function bgmStop() {
+    if (!bgmPlaying) return;
+    bgmPlaying = false;
+    if (bgmGain) {
+      bgmGain.gain.setValueAtTime(bgmGain.gain.value, ctx.currentTime);
+      bgmGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+    }
+    setTimeout(function() {
+      bgmNodes.forEach(function(n) { try { n.stop(); } catch(e) {} });
+      bgmNodes = [];
+      if (bgmGain) { try { bgmGain.disconnect(); } catch(e) {}; bgmGain = null; }
+    }, 600);
+  }
+
+  function toggleMute() {
+    init();
+    muted = !muted;
+    var btn = document.getElementById('muteBtn');
+    if (muted) {
+      bgmStop();
+      btn.textContent = '🔇';
+      btn.classList.add('muted');
+    } else {
+      btn.textContent = '🔊';
+      btn.classList.remove('muted');
+    }
+    return muted;
+  }
+
+  function isMuted() { return muted; }
+
+  return {
+    init, resume, click, match, mismatch, combo,
+    quizCorrect, quizWrong, levelWin, levelLose,
+    bgmStart, bgmStop, toggleMute, isMuted
+  };
+})();
+
+/* ============================================
+   CASE DATA
+   ============================================ */
+const CASES = {
+  1: {
+    name: '传统毒品',
+    icon: '🌿',
+    time: 150,
+    pairs: 10,
+    bonusTime: 3,
+    desc: '物证比对中 — 识别植物提取类及传统麻醉类毒品',
+    briefing: '案卷编号 2026-001。接获线报，辖区内发现传统毒品交易网络。嫌疑人通过走私渠道获取罂粟制品、古柯提取物等植物类毒品，以及杜冷丁等早期合成镇痛剂。此类毒品历史悠久，但危害深远。你的任务是：逐一比对物证照片与档案记录，确认全部涉案毒品的身份，并在比对完成后对物证进行正确分类归档。',
+    sig: '调查员 陆',
+    drugs: [
+      { name: '杜冷丁', img: '毒品图片-1/1.传统毒品/杜冷丁.png', cat: '传统毒品' },
+      { name: '古珂', img: '毒品图片-1/1.传统毒品/古珂.png', cat: '传统毒品' },
+      { name: '罂粟花', img: '毒品图片-1/1.传统毒品/罂粟花.jpg', cat: '传统毒品' },
+      { name: '鸦片', img: '毒品图片-1/1.传统毒品/鸦片.jpg', cat: '传统毒品' },
+      { name: '吗啡', img: '毒品图片-1/1.传统毒品/吗啡.jpg', cat: '传统毒品' },
+      { name: '大麻', img: '毒品图片-1/1.传统毒品/大麻.jpg', cat: '传统毒品' },
+      { name: '可卡因', img: '毒品图片-1/1.传统毒品/可卡因.jpg', cat: '传统毒品' },
+      { name: '海洛因', img: '毒品图片-1/1.传统毒品/海洛因.jpg', cat: '传统毒品' },
+      { name: '罂粟壳', img: '毒品图片-1/1.传统毒品/罂粟壳.jpg', cat: '传统毒品' },
+      { name: '咖啡因', img: '毒品图片-1/1.传统毒品/咖啡因.jpg', cat: '传统毒品' }
+    ]
+  },
+  2: {
+    name: '新型毒品',
+    icon: '⚗️',
+    time: 150,
+    pairs: 10,
+    bonusTime: 3,
+    desc: '物证比对中 — 识别化学合成类及实验室制取毒品',
+    briefing: '案卷编号 2026-002。情报升级。化学合成类毒品正在地下市场迅速蔓延。冰毒、摇头丸等全合成物证已送检。此类毒品通过工业化制取，纯度高、危害强，远超传统品类。芬太尼等实验室制取物甚至可致死量使用。请立即进行物证比对，完成鉴定后分类归档。',
+    sig: '调查员 陆',
+    drugs: [
+      { name: '冰毒', img: '毒品图片-1/2.新型毒品/冰毒.jpg', cat: '新型毒品' },
+      { name: 'K粉', img: '毒品图片-1/2.新型毒品/K粉.jpg', cat: '新型毒品' },
+      { name: '摇头丸', img: '毒品图片-1/2.新型毒品/摇头丸.jpg', cat: '新型毒品' },
+      { name: '麻古', img: '毒品图片-1/2.新型毒品/麻古.jpg', cat: '新型毒品' },
+      { name: '蓝精灵', img: '毒品图片-1/2.新型毒品/蓝精灵.jpg', cat: '新型毒品' },
+      { name: '三唑仑', img: '毒品图片-1/2.新型毒品/三唑仑.png', cat: '新型毒品' },
+      { name: '甲卡西酮', img: '毒品图片-1/2.新型毒品/甲卡西酮.png', cat: '新型毒品' },
+      { name: '0号胶囊', img: '毒品图片-1/2.新型毒品/0号胶囊.jpg', cat: '新型毒品' },
+      { name: '芬太尼', img: '毒品图片-1/2.新型毒品/芬太尼.png', cat: '新型毒品' },
+      { name: '开心水', img: '毒品图片-1/2.新型毒品/开心水.png', cat: '新型毒品' }
+    ]
+  },
+  3: {
+    name: '伪装毒品',
+    icon: '🎭',
+    time: 240,
+    pairs: 18,
+    bonusTime: 2,
+    desc: '物证比对中 — 识别伪装为日常物品的第三代毒品',
+    briefing: '案卷编号 2026-003。最高警报。新型伪装毒品已渗透至日常消费场景——糖果、饮料、饼干、甚至邮票均可能为毒品载体。此类物证识别难度极高，外观与普通商品无异，欺骗性极强。青少年为主要受害群体。请极其谨慎地进行物证比对，任何遗漏将造成严重后果。',
+    sig: '调查员 陆',
+    drugs: [
+      { name: 'QQ糖', img: '毒品图片-1/3.第三代伪装毒品/QQ糖.png', cat: '伪装毒品' },
+      { name: '咔哇', img: '毒品图片-1/3.第三代伪装毒品/咔哇.png', cat: '伪装毒品' },
+      { name: '减肥药', img: '毒品图片-1/3.第三代伪装毒品/减肥药.jpg', cat: '伪装毒品' },
+      { name: '跳跳糖', img: '毒品图片-1/3.第三代伪装毒品/跳跳糖.jpg', cat: '伪装毒品' },
+      { name: '巧克力', img: '毒品图片-1/3.第三代伪装毒品/巧克力.jpg', cat: '伪装毒品' },
+      { name: '邮票', img: '毒品图片-1/3.第三代伪装毒品/邮票.jpg', cat: '伪装毒品' },
+      { name: '曲奇饼干', img: '毒品图片-1/3.第三代伪装毒品/曲奇饼干.png', cat: '伪装毒品' },
+      { name: '奶茶', img: '毒品图片-1/3.第三代伪装毒品/奶茶.jpg', cat: '伪装毒品' },
+      { name: '小树枝', img: '毒品图片-1/3.第三代伪装毒品/小树枝.png', cat: '伪装毒品' },
+      { name: '听话水', img: '毒品图片-1/3.第三代伪装毒品/听话水.jpg', cat: '伪装毒品' },
+      { name: '笑气', img: '毒品图片-1/3.第三代伪装毒品/笑气.jpg', cat: '伪装毒品' },
+      { name: '止咳水', img: '毒品图片-1/3.第三代伪装毒品/止咳水.jpg', cat: '伪装毒品' },
+      { name: '彩虹烟', img: '毒品图片-1/3.第三代伪装毒品/彩虹烟.jpg', cat: '伪装毒品' },
+      { name: '果冻', img: '毒品图片-1/3.第三代伪装毒品/果冻.jpg', cat: '伪装毒品' },
+      { name: '迷幻蘑菇', img: '毒品图片-1/3.第三代伪装毒品/迷幻蘑菇.jpg', cat: '伪装毒品' },
+      { name: '聪明药', img: '毒品图片-1/3.第三代伪装毒品/聪明药.jpg', cat: '伪装毒品' },
+      { name: '可乐', img: '毒品图片-1/3.第三代伪装毒品/可乐.jpg', cat: '伪装毒品' },
+      { name: '甲卡西酮', img: '毒品图片-1/3.第三代伪装毒品/甲卡西酮.png', cat: '伪装毒品' }
+    ]
+  }
+};
+
+// Quiz: for each level, picks 5 drugs from current case + distractor question
+const QUIZ_CATEGORIES = ['传统毒品', '新型毒品', '伪装毒品'];
+
+/* ============================================
+   STATE
+   ============================================ */
+const STORAGE_KEY = 'jd_casefiles';
+let state = {
+  currentCase: 1,
+  unlocked: 1,
+  completed: [],
+  totalScore: 0,
+  // runtime
+  time: 150,
+  score: 0,
+  combo: 0,
+  selected: null,
+  cards: [],
+  timer: null,
+  playing: false,
+  totalPairs: 10,
+  quizScore: 0,
+  quizTimer: null
+};
+
+/* ============================================
+   PERSISTENCE
+   ============================================ */
+function save() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    unlocked: state.unlocked, completed: state.completed, totalScore: state.totalScore
+  })); } catch(e) {}
+}
+function load() {
+  try {
+    var d = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if (d) {
+      if (d.unlocked) state.unlocked = d.unlocked;
+      if (d.completed) state.completed = d.completed;
+      if (typeof d.totalScore === 'number') state.totalScore = d.totalScore;
+    }
+  } catch(e) {}
+}
+function clearSave() { try { localStorage.removeItem(STORAGE_KEY); } catch(e) {} }
+
+/* ============================================
+   UI HELPERS
+   ============================================ */
+function updateCaseCards() {
+  for (var i = 1; i <= 3; i++) {
+    var card = document.getElementById('caseFile'+i);
+    var badge = document.getElementById('caseBadge'+i);
+    card.classList.remove('locked', 'selected');
+    badge.classList.remove('badge-open', 'badge-done', 'badge-locked');
+    if (state.completed.includes(i)) {
+      badge.className = 'case-badge badge-done'; badge.textContent = '已归档';
+    } else if (i <= state.unlocked) {
+      card.classList.add('selected');
+      badge.className = 'case-badge badge-open'; badge.textContent = '待调查';
+    } else {
+      card.classList.add('locked');
+      badge.className = 'case-badge badge-locked'; badge.textContent = '未解锁';
+    }
+  }
+  for (var j = 1; j <= 3; j++) {
+    var node = document.getElementById('node'+j);
+    var rail = document.getElementById('rail'+j);
+    node.classList.remove('completed', 'active');
+    if (state.completed.includes(j)) { node.classList.add('completed'); if (j<3) rail.classList.add('done'); }
+    else if (j === state.unlocked) { node.classList.add('active'); }
+  }
+}
+
+function selectCase(n) {
+  if (n > state.unlocked) { shake(document.getElementById('caseFile'+n)); return; }
+  state.currentCase = n;
+  document.getElementById('startBtn').textContent = '展开调查 · 案卷 ' + n;
+  for (var i=1;i<=3;i++) document.getElementById('caseFile'+i).classList.remove('selected');
+  document.getElementById('caseFile'+n).classList.add('selected');
+}
+function shake(el) {
+  el.style.animation = 'none'; void el.offsetWidth;
+  el.style.animation = 'cardShake 0.4s ease';
+  setTimeout(function() { el.style.animation = ''; }, 400);
+}
+
+/* ============================================
+   SCREEN NAV
+   ============================================ */
+function showStartScreen() {
+	SoundEngine.bgmStop();
+  hideAll();
+  document.getElementById('startScreen').classList.remove('hidden');
+  document.getElementById('progressTrack').style.display = 'flex';
+  updateCaseCards();
+}
+function hideAll() {
+  var ids = ['startScreen','briefingScreen','gameScreen','endScreen','completeScreen'];
+  for (var i=0;i<ids.length;i++) document.getElementById(ids[i]).classList.add('hidden');
+  document.getElementById('vignette').classList.remove('urgent');
+}
+
+/* ============================================
+   START CASE → Briefing → Game
+   ============================================ */
+function startCase() {
+  var lv = state.currentCase;
+  var c = CASES[lv];
+  hideAll();
+  document.getElementById('briefingScreen').classList.remove('hidden');
+  document.getElementById('progressTrack').style.display = 'none';
+  // Typewriter briefing
+  var textEl = document.getElementById('briefingText');
+  var sigEl = document.getElementById('briefingSig');
+  var btn = document.getElementById('briefingStartBtn');
+  textEl.textContent = ''; sigEl.textContent = '';
+  btn.textContent = '正在解密案卷...';
+  btn.disabled = true;
+
+  var text = c.briefing;
+  var i = 0;
+  var iv = setInterval(function() {
+    textEl.textContent += text[i];
+    i++;
+    if (i >= text.length) {
+      clearInterval(iv);
+      sigEl.textContent = c.sig;
+      btn.textContent = '进入案卷';
+      btn.disabled = false;
+      btn.onclick = function() { startGame(lv); };
+    }
+  }, 30);
+}
+function skipBriefing() { startGame(state.currentCase); }
+
+/* ============================================
+   GAME START
+   ============================================ */
+function startGame(lv) {
+	SoundEngine.init(); SoundEngine.bgmStart();
+  var c = CASES[lv];
+  state.currentCase = lv;
+  state.time = c.time;
+  state.score = 0;
+  state.combo = 0;
+  state.selected = null;
+  state.cards = [];
+  state.playing = true;
+  state.totalPairs = c.pairs;
+  state.quizScore = 0;
+  if (state.timer) clearInterval(state.timer);
+  if (state.quizTimer) clearInterval(state.quizTimer);
+
+  hideAll();
+  document.getElementById('gameScreen').classList.remove('hidden');
+  document.getElementById('progressTrack').style.display = 'none';
+  document.getElementById('vignette').classList.remove('urgent');
+  document.getElementById('quizPanel').classList.add('hidden');
+  document.getElementById('grid').classList.remove('hidden');
+
+  document.getElementById('gameTitle').textContent = '案卷 00' + lv + '：' + c.name;
+  document.getElementById('gameDesc').textContent = c.desc;
+
+  buildGrid(c.drugs);
+  refreshStats();
+  state.timer = setInterval(gameTick, 1000);
+}
+
+function buildGrid(drugs) {
+  var cards = [];
+  drugs.forEach(function(d, idx) {
+    cards.push({ type: 'img', name: d.name, img: d.img, id: idx, cat: d.cat });
+    cards.push({ type: 'text', name: d.name, img: d.img, id: idx, cat: d.cat });
+  });
+  cards.sort(function() { return Math.random() - 0.5; });
+  state.cards = cards;
+
+  var grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  var total = cards.length;
+  var cols = total <= 8 ? 4 : total <= 20 ? 5 : 6;
+  grid.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
+  var sz = {4:'100px',5:'76px',6:'64px'}[cols];
+  var gp = {4:'14px',5:'9px',6:'6px'}[cols];
+  var fs = {4:'0.8em',5:'0.66em',6:'0.56em'}[cols];
+  grid.style.gap = gp;
+
+  cards.forEach(function(c, idx) {
+    var el = document.createElement('div');
+    el.className = 'evidence-card entering';
+    el.style.width = sz; el.style.height = sz;
+    el.dataset.index = idx;
+    el.style.animationDelay = (idx * 0.03) + 's';
+    // Random tilt for "pinned photo" look
+    var tilt = (Math.random() - 0.5) * 2.6;
+    el.style.setProperty('--tilt', tilt + 'deg');
+
+    if (c.type === 'img') {
+      var img = document.createElement('img');
+      img.className = 'card-img'; img.src = c.img; img.alt = c.name;
+      img.onerror = function() { this.style.display='none'; el.innerHTML='<span class="card-label">'+c.name+'</span>'; };
+      el.appendChild(img);
+    } else {
+      el.innerHTML = '<span class="card-label">' + c.name + '</span>';
+      el.style.fontSize = fs;
+    }
+    el.dataset.drugId = c.id;
+    el.dataset.cardType = c.type;
+    el.addEventListener('click', function() { pickCard(idx); });
+    // Clean up arrival animation when done, so confirmed/mismatch animations can take over
+    el.addEventListener('animationend', function handler() {
+      el.classList.remove('entering');
+      el.style.animationDelay = '';
+      el.removeEventListener('animationend', handler);
+    });
+    // Spotlight follow on hover
+    el.addEventListener('mouseenter', function(e) {
+      var spot = document.getElementById('spotlight');
+      var rect = el.getBoundingClientRect();
+      spot.style.left = (rect.left + rect.width/2) + 'px';
+      spot.style.top = (rect.top + rect.height/2) + 'px';
+      spot.classList.add('on');
+    });
+    el.addEventListener('mouseleave', function() {
+      document.getElementById('spotlight').classList.remove('on');
+    });
+    grid.appendChild(el);
+  });
+}
+
+/* ============================================
+   MATCHING LOGIC
+   ============================================ */
+function pickCard(idx) {
+  if (!state.playing) return;
+  var cards = document.querySelectorAll('.evidence-card');
+  var el = cards[idx];
+  if (el.classList.contains('confirmed')) return;
+  if (state.selected === idx) {
+    el.classList.remove('selected');
+    state.selected = null;
+    return;
+  }
+  if (state.selected === null) {
+    state.selected = idx;
+    el.classList.add('selected');
+	    SoundEngine.click();
+    return;
+  }
+  var first = cards[state.selected];
+  var second = el;
+  if (first.dataset.drugId === second.dataset.drugId && first.dataset.cardType !== second.dataset.cardType) {
+    matchHit(first, second);
+  } else {
+    matchMiss(first, second);
+  }
+}
+
+function matchHit(a, b) {
+	SoundEngine.match();
+  // Clear any lingering arrival animation state
+  a.classList.remove('entering'); a.style.animationDelay = '';
+  b.classList.remove('entering'); b.style.animationDelay = '';
+  var c = CASES[state.currentCase];
+  state.combo++;
+  var bonus = Math.min(state.combo - 1, 4) * 2;
+  state.score += 10 + bonus;
+  state.time += c.bonusTime;
+  popFeedback('+10', 'good');
+  if (state.combo >= 2) setTimeout(function() { popFeedback('连击 +'+bonus, 'bonus'); }, 260);
+	  if (state.combo >= 2) setTimeout(function() { SoundEngine.combo(); }, 140);
+  a.classList.add('confirmed');
+  b.classList.add('confirmed');
+  a.classList.remove('selected');
+  state.selected = null;
+  state.totalScore += 10 + bonus;
+  refreshStats();
+  checkAllMatched();
+}
+
+function matchMiss(a, b) {
+	SoundEngine.mismatch();
+  a.classList.remove('entering'); a.style.animationDelay = '';
+  b.classList.remove('entering'); b.style.animationDelay = '';
+  state.score = Math.max(0, state.score - 1);
+  state.combo = 0;
+  state.time = Math.max(0, state.time - 2);
+  popFeedback('-1', 'bad');
+  a.classList.add('mismatch'); b.classList.add('mismatch');
+  setTimeout(function() {
+    a.classList.remove('mismatch', 'selected');
+    b.classList.remove('mismatch');
+  }, 350);
+  state.selected = null;
+  refreshStats();
+}
+
+function popFeedback(txt, cls) {
+  var fb = document.getElementById('feedback');
+  fb.textContent = txt; fb.className = 'feedback-pop ' + cls;
+  void fb.offsetWidth; fb.classList.add('show');
+  setTimeout(function() { fb.classList.remove('show'); }, 750);
+}
+
+function refreshStats() {
+  document.getElementById('timeDisplay').textContent = state.time;
+  document.getElementById('scoreDisplay').textContent = state.score;
+  document.getElementById('comboDisplay').textContent = state.combo;
+  var tEl = document.getElementById('timeDisplay');
+  var cEl = document.getElementById('comboDisplay');
+  var v = document.getElementById('vignette');
+  tEl.classList.toggle('critical', state.time <= 15);
+  cEl.classList.toggle('on-fire', state.combo >= 3);
+  v.classList.toggle('urgent', state.time <= 15);
+}
+
+function gameTick() {
+  state.time--;
+  refreshStats();
+  if (state.time <= 0) endGame(false);
+}
+
+function checkAllMatched() {
+  var matched = document.querySelectorAll('.evidence-card.confirmed').length;
+  if (matched === state.cards.length) {
+    // Matching done — start quiz phase
+    clearInterval(state.timer);
+    state.playing = false;
+    setTimeout(startQuiz, 600);
+  }
+}
+
+/* ============================================
+   QUIZ PHASE — Two question types mixed
+   ============================================ */
+function startQuiz() {
+  var c = CASES[state.currentCase];
+  document.getElementById('grid').classList.add('hidden');
+  var qp = document.getElementById('quizPanel');
+  qp.classList.remove('hidden');
+  document.getElementById('quizTitle').textContent = '物证比对完成。进入确认测验。';
+  document.getElementById('vignette').classList.remove('urgent');
+
+  // Pick 5 drugs from the current case for quiz
+  var pool = c.drugs.slice();
+  pool.sort(function() { return Math.random() - 0.5; });
+  var quizDrugs = pool.slice(0, Math.min(5, pool.length));
+
+  // Build distractor pool from ALL drugs across all levels
+  var allDrugs = [];
+  for (var l=1; l<=3; l++) {
+    allDrugs = allDrugs.concat(CASES[l].drugs);
+  }
+
+  // Assign each question a random type: 'img2name' or 'name2img'
+  var questions = quizDrugs.map(function(d) {
+    return { drug: d, type: Math.random() < 0.5 ? 'img2name' : 'name2img' };
+  });
+
+  state._quizData = { questions: questions, allDrugs: allDrugs, current: 0, correct: 0, total: questions.length };
+  showQuizQuestion();
+}
+
+function showQuizQuestion() {
+  var qd = state._quizData;
+  if (qd.current >= qd.total) {
+    finishQuiz();
+    return;
+  }
+  var q = qd.questions[qd.current];
+  var drug = q.drug;
+
+  document.getElementById('quizCounter').textContent = '第 ' + (qd.current + 1) + ' / ' + qd.total + ' 题';
+  document.getElementById('quizNote').textContent = '';
+
+  if (q.type === 'img2name') {
+    showImg2Name(q, drug);
+  } else {
+    showName2Img(q, drug);
+  }
+
+  // Timer bar
+  var fill = document.getElementById('quizTimerFill');
+  fill.style.width = '100%';
+  fill.classList.remove('running-out');
+  var timeLeft = 6;
+  var totalTime = 6;
+  qd._quizTimeLeft = timeLeft;
+  if (state.quizTimer) clearInterval(state.quizTimer);
+
+  state.quizTimer = setInterval(function() {
+    qd._quizTimeLeft -= 0.1;
+    var pct = Math.max(0, (qd._quizTimeLeft / totalTime) * 100);
+    fill.style.width = pct + '%';
+    if (qd._quizTimeLeft <= 1.5) fill.classList.add('running-out');
+    if (qd._quizTimeLeft <= 0) {
+      clearInterval(state.quizTimer);
+      document.getElementById('quizNote').textContent = '超时 — 正确答案：' + drug.name;
+	      SoundEngine.quizWrong();
+      document.getElementById('quizNote').style.color = 'var(--brass)';
+      if (q.type === 'img2name') {
+        highlightTextAnswer(null, drug.name);
+      } else {
+        highlightImgAnswer(null, drug.img);
+      }
+      disableQuizOptions();
+      setTimeout(nextQuizQuestion, 1200);
+    }
+  }, 100);
+}
+
+/* -------- Type A: Image → pick name -------- */
+function showImg2Name(q, drug) {
+  document.getElementById('quizImg').classList.remove('hidden');
+  document.getElementById('quizNameDisplay').classList.add('hidden');
+  document.getElementById('quizOptions').classList.remove('hidden');
+  document.getElementById('quizImgOptions').classList.add('hidden');
+
+  document.getElementById('quizImg').src = drug.img;
+  document.getElementById('quizQuestion').textContent = '请选择此物证的正确名称：';
+
+  // Build 3 name options: correct + 2 distractors
+  var others = state._quizData.allDrugs.filter(function(d) { return d.name !== drug.name; });
+  others.sort(function() { return Math.random() - 0.5; });
+  var options = [drug.name, others[0].name, others[1].name];
+  options.sort(function() { return Math.random() - 0.5; });
+
+  var optEl = document.getElementById('quizOptions');
+  optEl.innerHTML = '';
+  options.forEach(function(opt) {
+    var btn = document.createElement('button');
+    btn.className = 'btn-quiz-opt';
+    btn.textContent = opt;
+    btn.onclick = function() { answerQuiz(opt, drug.name, btn, 'text'); };
+    optEl.appendChild(btn);
+  });
+}
+
+/* -------- Type B: Name → pick image -------- */
+function showName2Img(q, drug) {
+  document.getElementById('quizImg').classList.add('hidden');
+  document.getElementById('quizNameDisplay').classList.remove('hidden');
+  document.getElementById('quizOptions').classList.add('hidden');
+  document.getElementById('quizImgOptions').classList.remove('hidden');
+
+  document.getElementById('quizNameDisplay').textContent = drug.name;
+  document.getElementById('quizQuestion').textContent = '请选择与以上名称对应的物证照片：';
+
+  // Build 3 image options: correct + 2 distractors
+  var others = state._quizData.allDrugs.filter(function(d) { return d.img !== drug.img; });
+  others.sort(function() { return Math.random() - 0.5; });
+  var options = [
+    { name: drug.name, img: drug.img, correct: true },
+    { name: others[0].name, img: others[0].img, correct: false },
+    { name: others[1].name, img: others[1].img, correct: false }
+  ];
+  options.sort(function() { return Math.random() - 0.5; });
+
+  var optEl = document.getElementById('quizImgOptions');
+  optEl.innerHTML = '';
+  options.forEach(function(opt) {
+    var btn = document.createElement('div');
+    btn.className = 'quiz-img-opt';
+    btn.innerHTML = '<img src="' + opt.img + '" alt="" onerror="this.parentElement.textContent=\'?\'>';
+    btn.onclick = function() { answerQuiz(opt.img, drug.img, btn, 'img'); };
+    optEl.appendChild(btn);
+  });
+}
+
+/* -------- Answer handling -------- */
+function answerQuiz(chosen, correct, btn, mode) {
+  clearInterval(state.quizTimer);
+  disableQuizOptions();
+  var qd = state._quizData;
+  var drug = qd.questions[qd.current].drug;
+
+  if (chosen === correct) {
+    qd.correct++;
+    state.quizScore += 15;
+    state.score += 15;
+    state.totalScore += 15;
+    btn.classList.add('correct-flash');
+    document.getElementById('quizNote').textContent = '✓ 正确';
+    document.getElementById('quizNote').style.color = 'var(--moss)';
+    popFeedback('+15', 'good');
+	    SoundEngine.quizCorrect();
+  } else {
+    btn.classList.add('wrong-flash');
+	    SoundEngine.quizWrong();
+    document.getElementById('quizNote').textContent = '✗ 正确答案：' + drug.name;
+    document.getElementById('quizNote').style.color = 'var(--blood-red)';
+    if (mode === 'text') {
+      highlightTextAnswer(chosen, correct);
+    } else {
+      highlightImgAnswer(chosen, correct);
+    }
+  }
+
+  setTimeout(nextQuizQuestion, 1300);
+}
+
+function disableQuizOptions() {
+  var all = document.querySelectorAll('.btn-quiz-opt, .quiz-img-opt');
+  for (var i=0;i<all.length;i++) all[i].style.pointerEvents = 'none';
+}
+
+function highlightTextAnswer(chosen, correct) {
+  var all = document.querySelectorAll('.btn-quiz-opt');
+  for (var i=0;i<all.length;i++) {
+    if (all[i].textContent === correct) all[i].classList.add('correct-flash');
+  }
+}
+
+function highlightImgAnswer(chosen, correct) {
+  var all = document.querySelectorAll('.quiz-img-opt');
+  for (var i=0;i<all.length;i++) {
+    var img = all[i].querySelector('img');
+    if (img && img.src === correct) all[i].classList.add('correct-flash');
+  }
+}
+
+function nextQuizQuestion() {
+  state._quizData.current++;
+  showQuizQuestion();
+}
+
+function finishQuiz() {
+  document.getElementById('quizPanel').classList.add('hidden');
+  clearInterval(state.quizTimer);
+  refreshStats();
+  endGame(true);
+}
+
+/* ============================================
+   END GAME
+   ============================================ */
+function endGame(success) {
+  clearInterval(state.timer);
+  clearInterval(state.quizTimer);
+	SoundEngine.bgmStop();
+  state.playing = false;
+  document.getElementById('vignette').classList.remove('urgent');
+  document.getElementById('spotlight').classList.remove('on');
+
+  hideAll();
+  document.getElementById('progressTrack').style.display = 'flex';
+
+  if (success) {
+    celebrate();
+	SoundEngine.levelWin();
+    if (!state.completed.includes(state.currentCase)) state.completed.push(state.currentCase);
+    if (state.currentCase < 3) state.unlocked = Math.max(state.unlocked, state.currentCase + 1);
+    save();
+    updateCaseCards();
+
+    document.getElementById('endScreen').classList.remove('hidden');
+    document.getElementById('resultIcon').textContent = '📋';
+    document.getElementById('resultTitle').textContent = '案卷 00' + state.currentCase + ' — 调查完成';
+    document.getElementById('resultTitle').className = 'result-heading win';
+    document.getElementById('finalScore').textContent = state.score;
+    document.getElementById('finalGrade').textContent = getRank(state.score, state.currentCase);
+    document.getElementById('statTime').textContent = state.time;
+    document.getElementById('statMatches').textContent = state.totalPairs;
+    document.getElementById('statQuiz').textContent = state._quizData ? state._quizData.correct + '/' + state._quizData.total : '-';
+
+    var html = '';
+    if (state.currentCase < 3) html += '<button class="btn btn-primary" onclick="goNext()">调查下一案卷</button>';
+    html += '<button class="btn btn-brass" onclick="showComplete()">查看总结报告</button>';
+    html += '<button class="btn btn-secondary" onclick="showStartScreen()">返回案卷室</button>';
+    document.getElementById('resultActions').innerHTML = html;
+  } else {
+    document.getElementById('endScreen').classList.remove('hidden');
+    document.getElementById('resultIcon').textContent = '⏰';
+    document.getElementById('resultTitle').textContent = '时间耗尽';
+	SoundEngine.levelLose();
+    document.getElementById('resultTitle').className = 'result-heading lose';
+    document.getElementById('finalScore').textContent = state.score;
+    document.getElementById('finalGrade').textContent = '调查中断';
+    document.getElementById('statTime').textContent = '0';
+    document.getElementById('statMatches').textContent = Math.floor(state.totalPairs / 2);
+    document.getElementById('statQuiz').textContent = '-';
+    document.getElementById('resultActions').innerHTML =
+      '<button class="btn btn-primary" onclick="startGame(' + state.currentCase + ')">重新调查</button>' +
+      '<button class="btn btn-secondary" onclick="showStartScreen()">返回案卷室</button>';
+  }
+}
+
+function getRank(score, lv) {
+  var ranks = {
+    1: ['见习调查员','初级调查员','资深调查员','首席调查员'],
+    2: ['初级调查员','资深调查员','首席调查员','情报分析师'],
+    3: ['资深调查员','首席调查员','情报分析师','行动指挥官']
+  };
+  var r = ranks[lv];
+  if (score >= 60) return r[3]; if (score >= 45) return r[2]; if (score >= 25) return r[1]; return r[0];
+}
+
+function goNext() { if (state.currentCase < 3) startGame(state.currentCase + 1); }
+
+function showComplete() {
+  hideAll();
+  document.getElementById('completeScreen').classList.remove('hidden');
+  var total = state.totalScore;
+  var rank;
+  if (total>=200) rank='禁毒行动指挥官';
+  else if (total>=150) rank='高级情报分析师';
+  else if (total>=100) rank='首席调查员';
+  else if (total>=50) rank='资深调查员';
+  else rank='见习调查员';
+  document.getElementById('finalRank').textContent = rank;
+  document.getElementById('totalScore').textContent = total;
+  document.getElementById('totalLevels').textContent = state.completed.length;
+}
+
+/* ============================================
+   CELEBRATION
+   ============================================ */
+function celebrate() {
+  var container = document.getElementById('celebration');
+  container.innerHTML = '';
+  var colors = ['#8b1a1a','#b8a06e','#4a6b3a','#2a3a50','#d4c8b8','#a01020'];
+  // Embers — burst from center
+  for (var i=0;i<40;i++) {
+    var e = document.createElement('div'); e.className='ember';
+    var ang = (Math.PI*2*i/40)+(Math.random()-0.5)*0.4;
+    var dist = 70+Math.random()*260;
+    e.style.setProperty('--ex', Math.cos(ang)*dist+'px');
+    e.style.setProperty('--ey', Math.sin(ang)*dist+'px');
+    e.style.backgroundColor = colors[Math.floor(Math.random()*colors.length)];
+    e.style.width = (2+Math.random()*5)+'px'; e.style.height = (2+Math.random()*5)+'px';
+    e.style.animationDelay = Math.random()*0.3+'s';
+    e.style.animationDuration = (1.5+Math.random()*1.5)+'s';
+    container.appendChild(e);
+  }
+  // Shreds — fall from top
+  for (var j=0;j<50;j++) {
+    var s = document.createElement('div'); s.className='shred';
+    s.style.left = Math.random()*100+'%';
+    s.style.width = (4+Math.random()*7)+'px'; s.style.height = (4+Math.random()*10)+'px';
+    s.style.backgroundColor = colors[Math.floor(Math.random()*colors.length)];
+    s.style.setProperty('--spin', (Math.random()*720-360)+'deg');
+    s.style.setProperty('--dur', (2+Math.random()*2.5)+'s');
+    s.style.setProperty('--lag', (0.3+Math.random()*0.6)+'s');
+    s.style.borderRadius = Math.random()>0.5?'50%':'2px';
+    container.appendChild(s);
+  }
+  setTimeout(function() { container.innerHTML=''; }, 4200);
+}
+
+/* ============================================
+   MODALS
+   ============================================ */
+function showInfo() { document.getElementById('infoModal').classList.remove('hidden'); }
+function closeInfo() { document.getElementById('infoModal').classList.add('hidden'); }
+function confirmQuit() {
+  if (state.playing) { document.getElementById('quitModal').classList.remove('hidden'); }
+  else forceQuit();
+}
+function closeQuit() { document.getElementById('quitModal').classList.add('hidden'); }
+function forceQuit() {
+	SoundEngine.bgmStop();
+  document.getElementById('quitModal').classList.add('hidden');
+  clearInterval(state.timer); clearInterval(state.quizTimer);
+  state.playing = false;
+  document.getElementById('vignette').classList.remove('urgent');
+  document.getElementById('spotlight').classList.remove('on');
+  showStartScreen();
+}
+
+/* ============================================
+   RESET
+   ============================================ */
+function resetGame() {
+  clearSave();
+  state = {
+    currentCase: 1, unlocked: 1, completed: [], totalScore: 0,
+    time: 150, score: 0, combo: 0, selected: null, cards: [], timer: null,
+    playing: false, totalPairs: 10, quizScore: 0, quizTimer: null
+  };
+  document.getElementById('startBtn').textContent = '展开调查';
+  showStartScreen();
+}
+
+/* ============================================
+   INIT
+   ============================================ */
+(function init() {
+  for (var i=1;i<=3;i++) {
+    var prev = document.getElementById('preview'+i);
+    var drugs = CASES[i].drugs;
+    prev.innerHTML = drugs.map(function(d) {
+      return '<div class="case-preview-item"><img src="'+d.img+'" alt="'+d.name+'" onerror="this.style.display=\'none\'"><span>'+d.name+'</span></div>';
+    }).join('');
+  }
+  load();
+  updateCaseCards();
+})();
+</script>
+</body>
+</html>
