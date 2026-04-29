@@ -1072,7 +1072,7 @@ body {
 <div class="spotlight" id="spotlight"></div>
 <button class="mute-btn" id="muteBtn" onclick="SoundEngine.toggleMute()" title="音效开关">🔊</button>
 <button class="mute-btn" id="bgmCycleBtn" title="切换BGM">🎵</button>
-<span class="ver-label">TERMINAL v1.7</span>
+<span class="ver-label">TERMINAL v1.8</span>
 
 <div class="app-shell">
 
@@ -1497,10 +1497,21 @@ const SoundEngine = (function() {
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       return resp.arrayBuffer();
     }).then(function(buf) {
-      if (!ctx) init();
-      if (!ctx) throw new Error('No AudioContext');
+      if (!ctx) throw new Error('No AudioContext - tap first');
+      // Use callback form for Safari/Quark compatibility
       return new Promise(function(resolve, reject) {
-        ctx.decodeAudioData(buf, resolve, reject);
+        var handled = false;
+        ctx.decodeAudioData(buf, function(audioBuf) {
+          if (!handled) { handled = true; resolve(audioBuf); }
+        }, function(err) {
+          if (!handled) { handled = true; reject(err || new Error('decode error')); }
+        });
+        // Fallback: if decodeAudioData returns a promise (modern Chrome),
+        // use that instead of callbacks
+        var maybePromise = ctx.decodeAudioData(buf);
+        if (maybePromise && typeof maybePromise.then === 'function') {
+          maybePromise.then(resolve, reject);
+        }
       });
     }).then(function(audioBuf) {
       bgmBuffer = audioBuf;
@@ -1530,7 +1541,7 @@ const SoundEngine = (function() {
     }
     
     bgmSource.connect(bgmGainNode);
-    bgmSource.start(0);
+    bgmSource.start(ctx.currentTime);
   }
 
   function stopBgmSource() {
@@ -1649,7 +1660,7 @@ const SoundEngine = (function() {
     document.removeEventListener('touchstart', onFirstTouch);
   }
   document.addEventListener('click', onFirstTouch, false);
-  document.addEventListener('touchstart', onFirstTouch, false);
+  document.addEventListener('touchend', onFirstTouch, false);
 
   function toggleMute() {
     init();
