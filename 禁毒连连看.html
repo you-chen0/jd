@@ -1072,7 +1072,7 @@ body {
 <div class="spotlight" id="spotlight"></div>
 <button class="mute-btn" id="muteBtn" onclick="SoundEngine.toggleMute()" title="音效开关">🔊</button>
 <button class="mute-btn" id="bgmCycleBtn" title="切换BGM">🎵</button>
-<span class="ver-label">TERMINAL v1.6.7</span>
+<span class="ver-label">TERMINAL v1.6.8</span>
 
 <div class="app-shell">
 
@@ -1586,6 +1586,8 @@ const SoundEngine = (function() {
 
   function bgmPlay() {
     if (muted) return;
+    // Already playing
+    if (bgmSource && bgmGainNode && bgmGainNode.gain.value >= bgmVolume - 0.01) return;
     init();
     bgmPlaying = true;
     
@@ -1619,12 +1621,12 @@ const SoundEngine = (function() {
   // Audio unlock on first interaction
   document.addEventListener('click', function unlockBgm() {
     init(); resume();
-    if (!bgmPlaying && !muted) bgmPlay();
+    if (!muted) bgmPlay();
     document.removeEventListener('click', unlockBgm);
   }, false);
   document.addEventListener('touchend', function unlockBgm() {
     init(); resume();
-    if (!bgmPlaying && !muted) bgmPlay();
+    if (!muted) bgmPlay();
     document.removeEventListener('touchend', unlockBgm);
   }, false);
 
