@@ -1030,7 +1030,7 @@ body {
 <div class="spotlight" id="spotlight"></div>
 <button class="mute-btn" id="muteBtn" onclick="SoundEngine.toggleMute()" title="音效开关">🔊</button>
 <button class="mute-btn" id="bgmCycleBtn" title="切换BGM">🎵</button>
-<span class="ver-label">TERMINAL v1.4 · SELECTOR</span>
+<span class="ver-label">TERMINAL v1.5</span>
 
 <div class="app-shell">
 
@@ -1412,10 +1412,7 @@ const SoundEngine = (function() {
   }
 
   // --- BGM: HTML5 Audio, single track cyclable ---
-  var bgmFiles = [
-    'bgm_menu', 'bgm_game', 'bgm_quiz',
-    'bgm_alt1', 'bgm_alt2', 'bgm_alt3'
-  ];
+  var bgmFiles = ['bgm_alt1'];
   var bgmIndex = 0;
   var bgmAudio = null;
   var bgmCurrent = null;
