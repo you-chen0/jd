@@ -1037,7 +1037,7 @@ body {
 <div class="spotlight" id="spotlight"></div>
 <button class="mute-btn" id="muteBtn" onclick="SoundEngine.toggleMute()" title="音效开关">🔊</button>
 <button class="mute-btn" id="bgmCycleBtn" title="切换BGM">🎵</button>
-<span class="ver-label">TERMINAL v1.7.6</span>
+<span class="ver-label">TERMINAL v1.7.7</span>
 
 <div class="app-shell">
 
@@ -1897,14 +1897,17 @@ function buildGrid(drugs) {
   var grid = document.getElementById('grid');
   grid.innerHTML = '';
   var total = cards.length;
-  var cols = total <= 8 ? 4 : total <= 20 ? 5 : 6;
-  // Reduce columns on narrow screens
-  var vw = window.innerWidth;
-  if (vw < 400) { cols = Math.min(cols, total <= 8 ? 3 : 4); }
+  // Calculate columns based on available width
+  var gridW = grid.clientWidth || (window.innerWidth - 36);
+  var cardMin = 56;
+  var cols = Math.max(3, Math.floor(gridW / cardMin));
+  // Cap at reasonable limits
+  cols = Math.min(cols, total <= 8 ? 4 : total <= 20 ? 5 : 6);
+  cols = Math.max(cols, 3);
   grid.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
-  var maxSz = {4:'100px',5:'90px',6:'80px'}[cols];
-  var gp = {4:'14px',5:'9px',6:'6px'}[cols];
-  var fs = {4:'0.8em',5:'0.66em',6:'0.56em'}[cols];
+  var maxSz = cols <= 3 ? '120px' : cols <= 4 ? '100px' : cols <= 5 ? '90px' : '80px';
+  var gp = cols <= 4 ? '14px' : '9px';
+  var fs = cols <= 3 ? '0.9em' : cols <= 4 ? '0.8em' : '0.66em';
   grid.style.gap = gp;
 
   cards.forEach(function(c, idx) {
