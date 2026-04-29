@@ -1020,9 +1020,51 @@ body {
   opacity: 1;
   transition: opacity 0.15s;
 }
+
+/* Audio unlock prompt */
+.audio-prompt {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(13,11,9,0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.audio-prompt.hidden { display: none; }
+.audio-prompt-box {
+  text-align: center;
+  padding: 40px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--noir-warm);
+}
+.audio-prompt-icon { font-size: 3em; margin-bottom: 16px; }
+.audio-prompt-text {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 1.1em;
+  color: var(--text-parchment);
+  margin-bottom: 8px;
+}
+.audio-prompt-sub {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6em;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+}
 </style>
 </head>
 <body>
+<div class="audio-prompt hidden" id="audioPrompt">
+  <div class="audio-prompt-box">
+    <div class="audio-prompt-icon">🔊</div>
+    <div class="audio-prompt-text">点击任意位置开始</div>
+    <div class="audio-prompt-sub">TAP TO ENABLE AUDIO</div>
+  </div>
+</div>
 
 <div class="atmo-fog"></div>
 <div class="atmo-grain"></div>
@@ -1030,7 +1072,7 @@ body {
 <div class="spotlight" id="spotlight"></div>
 <button class="mute-btn" id="muteBtn" onclick="SoundEngine.toggleMute()" title="音效开关">🔊</button>
 <button class="mute-btn" id="bgmCycleBtn" title="切换BGM">🎵</button>
-<span class="ver-label">TERMINAL v1.5</span>
+<span class="ver-label">TERMINAL v1.6</span>
 
 <div class="app-shell">
 
@@ -1432,74 +1474,116 @@ const SoundEngine = (function() {
     noiseBurst(t + 0.5, 120, 0.7, 0.18, 0.25, 'lowpass');
   }
 
-  // --- BGM: HTML5 Audio with muted-autoplay trick ---
+  // --- BGM: Web Audio decoded MP3 (cross-browser compatible) ---
   var bgmFiles = ['bgm_alt1'];
   var bgmIndex = 0;
-  var bgmAudio = null;
+  var bgmBuffer = null;       // decoded AudioBuffer
+  var bgmSource = null;       // current AudioBufferSourceNode
+  var bgmGainNode = null;     // GainNode for volume control
   var bgmPlaying = false;
   var bgmVolume = 0.55;
   var bgmFadeTimer = null;
+  var bgmLoaded = false;
 
   function bgmLoadTrack() {
-    if (bgmAudio) { bgmAudio.pause(); bgmAudio = null; }
+    // Fetch and decode MP3 via Web Audio (works on all browsers including Quark)
+    bgmLoaded = false;
     var file = bgmFiles[bgmIndex] + '.mp3';
-    bgmAudio = new Audio('bgm/' + file);
-    bgmAudio.loop = true;
-    bgmAudio.volume = 0;
-    bgmAudio.preload = 'auto';
+    var url = 'bgm/' + file;
+    
+    fetch(url).then(function(resp) {
+      if (!resp.ok) throw new Error('BGM fetch failed');
+      return resp.arrayBuffer();
+    }).then(function(buf) {
+      if (!ctx) init();
+      if (!ctx) return;
+      return new Promise(function(resolve, reject) {
+        ctx.decodeAudioData(buf, resolve, reject);
+      });
+    }).then(function(audioBuf) {
+      bgmBuffer = audioBuf;
+      bgmLoaded = true;
+      // If play was requested before decode finished, start now
+      if (bgmPlaying && !bgmSource) {
+        startBgmSource();
+      }
+    }).catch(function(e) {
+      console.warn('BGM decode failed:', e);
+    });
   }
 
-  function bgmFade(audio, to, ms) {
+  function startBgmSource() {
+    if (!ctx || !bgmBuffer || !bgmLoaded) return;
+    stopBgmSource();
+    
+    bgmSource = ctx.createBufferSource();
+    bgmSource.buffer = bgmBuffer;
+    bgmSource.loop = true;
+    
+    if (!bgmGainNode) {
+      bgmGainNode = ctx.createGain();
+      bgmGainNode.gain.value = 0;
+      bgmGainNode.connect(masterGain || ctx.destination);
+    }
+    
+    bgmSource.connect(bgmGainNode);
+    bgmSource.start(0);
+  }
+
+  function stopBgmSource() {
+    if (bgmSource) {
+      try { bgmSource.stop(); } catch(e) {}
+      bgmSource.disconnect();
+      bgmSource = null;
+    }
+  }
+
+  function bgmFade(to, ms) {
+    if (!bgmGainNode) return;
     if (bgmFadeTimer) clearInterval(bgmFadeTimer);
     var steps = 20;
     var stepMs = ms / steps;
-    var from = audio.volume;
+    var from = bgmGainNode.gain.value;
     var diff = to - from;
     if (Math.abs(diff) < 0.01) return;
     var i = 0;
     bgmFadeTimer = setInterval(function() {
       i++;
-      audio.volume = Math.max(0, Math.min(1, from + diff * (i / steps)));
+      bgmGainNode.gain.value = Math.max(0, Math.min(1, from + diff * (i / steps)));
       if (i >= steps) { clearInterval(bgmFadeTimer); bgmFadeTimer = null; }
     }, stepMs);
   }
 
   function bgmPlay() {
     if (muted) return;
-    if (!bgmAudio) bgmLoadTrack();
-    if (!bgmAudio) return;
-    if (bgmPlaying && bgmAudio.volume >= bgmVolume - 0.01) return;
-
+    init();  // ensure AudioContext exists
+    resume();
+    if (!bgmBuffer) bgmLoadTrack();
+    
     bgmPlaying = true;
-
-    // Muted-autoplay trick: start muted, then unmute.
-    // Browsers allow muted autoplay; unmuting after playback works.
-    if (bgmAudio.paused || bgmAudio.volume < 0.01) {
-      bgmAudio.volume = 0;
-      bgmAudio.muted = true;
-      var p = bgmAudio.play();
-      var self = bgmAudio;
-      if (p && p.then) {
-        p.then(function() {
-          self.muted = false;
-          bgmFade(self, bgmVolume, 600);
-        }).catch(function() {
-          // Even muted play failed — retry on user gesture
-          bgmPlaying = false;
-        });
+    
+    if (bgmLoaded && bgmBuffer) {
+      if (!bgmSource) {
+        startBgmSource();
+        bgmFade(bgmVolume, 600);
+        hideAudioPrompt();
+      } else {
+        // Already playing, just ensure volume
+        bgmFade(bgmVolume, 300);
+        hideAudioPrompt();
       }
-    } else {
-      bgmFade(bgmAudio, bgmVolume, 300);
     }
+    // If not loaded yet, startBgmSource will be called in bgmLoadTrack's .then()
   }
 
   function bgmStop() {
     bgmPlaying = false;
     if (bgmFadeTimer) { clearInterval(bgmFadeTimer); bgmFadeTimer = null; }
-    if (bgmAudio && !bgmAudio.paused) {
-      bgmFade(bgmAudio, 0, 350);
-      var a = bgmAudio;
-      setTimeout(function() { a.pause(); a.currentTime = 0; }, 400);
+    if (bgmGainNode && bgmGainNode.gain.value > 0.01) {
+      bgmFade(0, 350);
+      setTimeout(function() { stopBgmSource(); }, 400);
+    } else {
+      stopBgmSource();
     }
   }
 
@@ -1507,6 +1591,9 @@ const SoundEngine = (function() {
     bgmIndex = (bgmIndex + 1) % bgmFiles.length;
     var wasPlaying = bgmPlaying;
     bgmStop();
+    stopBgmSource();
+    bgmBuffer = null;
+    bgmLoaded = false;
     bgmLoadTrack();
     if (wasPlaying && !muted) bgmPlay();
     var name = bgmFiles[bgmIndex].replace('bgm_', '').replace(/_/g, ' ');
@@ -1519,7 +1606,7 @@ const SoundEngine = (function() {
     return bgmFiles[bgmIndex].replace('bgm_', '').replace(/_/g, ' ');
   }
 
-  // Load saved BGM preference and prime audio
+  // Load saved BGM preference and start loading
   (function() {
     try {
       var saved = localStorage.getItem('jd_bgm_index');
@@ -1527,6 +1614,23 @@ const SoundEngine = (function() {
     } catch(e) {}
     bgmLoadTrack();
   })();
+
+  function retryBgm() {
+    init(); resume();
+    if (!bgmPlaying && !muted) bgmPlay();
+  }
+
+  // Prime on first interaction (retry BGM if autoplay was blocked)
+  document.addEventListener('click', function prime() {
+    init(); resume();
+    if (!bgmPlaying && !muted) bgmPlay();
+    document.removeEventListener('click', prime);
+  }, false);
+  document.addEventListener('touchstart', function prime() {
+    init(); resume();
+    if (!bgmPlaying && !muted) bgmPlay();
+    document.removeEventListener('touchstart', prime);
+  }, false);
 
   function toggleMute() {
     init();
@@ -1546,31 +1650,39 @@ const SoundEngine = (function() {
 
   function isMuted() { return muted; }
 
-  // Prime on first interaction (retry BGM if autoplay was blocked)
-  document.addEventListener('click', function prime() {
-    init(); resume();
-    if (!bgmPlaying && !muted) bgmPlay();
-    document.removeEventListener('click', prime);
-  }, false);
-  document.addEventListener('touchstart', function prime() {
-    init(); resume();
-    if (!bgmPlaying && !muted) bgmPlay();
-    document.removeEventListener('touchstart', prime);
-  }, false);
-
   return {
     init: init, resume: resume,
-    click: click, typewriter: typewriter, match: match, mismatch: mismatch, combo: combo,
+    click: click, typewriter: typewriter,
+    match: match, mismatch: mismatch, combo: combo,
     quizCorrect: quizCorrect, quizWrong: quizWrong,
     levelWin: levelWin, levelLose: levelLose,
     bgmStop: bgmStop, bgmPlay: bgmPlay, bgmCycle: bgmCycle, bgmGetName: bgmGetName,
+    retryBgm: retryBgm,
     toggleMute: toggleMute, isMuted: isMuted
   };
 })();
 
+// Audio prompt helpers (outside SoundEngine)
+function showAudioPrompt() {
+  var el = document.getElementById('audioPrompt');
+  if (el) el.classList.remove('hidden');
+}
+function hideAudioPrompt() {
+  var el = document.getElementById('audioPrompt');
+  if (el) el.classList.add('hidden');
+}
+document.addEventListener('DOMContentLoaded', function() {
+  var prompt = document.getElementById('audioPrompt');
+  if (prompt) {
+    prompt.addEventListener('click', function() { SoundEngine.retryBgm(); });
+    prompt.addEventListener('touchstart', function(e) {
+      e.preventDefault();
+      SoundEngine.retryBgm();
+    });
+  }
+});
 
-/* ============================================
-   CASE DATA
+/*
    ============================================ */
 const CASES = {
   1: {
