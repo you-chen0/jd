@@ -1072,7 +1072,7 @@ body {
 <div class="spotlight" id="spotlight"></div>
 <button class="mute-btn" id="muteBtn" onclick="SoundEngine.toggleMute()" title="音效开关">🔊</button>
 <button class="mute-btn" id="bgmCycleBtn" title="切换BGM">🎵</button>
-<span class="ver-label">TERMINAL v1.6.4</span>
+<span class="ver-label">TERMINAL v1.6.5</span>
 
 <div class="app-shell">
 
@@ -1474,115 +1474,139 @@ const SoundEngine = (function() {
     noiseBurst(t + 0.5, 120, 0.7, 0.18, 0.25, 'lowpass');
   }
 
-  // --- BGM: Blob URL + Audio element (in-memory, no fetch on play) ---
-  var bgmFiles = ['bgm_alt1'];
-  var bgmIndex = 0;
-  var bgmBlobUrl = null;
-  var bgmAudio = null;
+  // --- BGM: WAV PCM (no decode, raw samples -> AudioBuffer) ---
+  var bgmBuffer = null;     // decoded AudioBuffer ready to play
+  var bgmSource = null;     // current AudioBufferSourceNode
+  var bgmGainNode = null;
   var bgmPlaying = false;
   var bgmVolume = 0.55;
   var bgmFadeTimer = null;
 
   function bgmLoadTrack() {
-    // Fetch MP3, convert to Blob URL (in-memory, avoids network during play())
-    var file = bgmFiles[bgmIndex] + '.mp3';
-    var url = 'bgm/' + file;
-    
-    fetch(url).then(function(resp) {
+    // Fetch WAV, parse header, copy PCM -> AudioBuffer (no decodeAudioData!)
+    fetch('bgm/bgm_pcm.wav').then(function(resp) {
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      return resp.blob();
-    }).then(function(blob) {
-      if (bgmBlobUrl) URL.revokeObjectURL(bgmBlobUrl);
-      bgmBlobUrl = URL.createObjectURL(blob);
-      // Create audio element with blob URL
-      if (bgmAudio) { bgmAudio.pause(); bgmAudio = null; }
-      bgmAudio = new Audio(bgmBlobUrl);
-      bgmAudio.loop = true;
-      bgmAudio.volume = 0;
-      bgmAudio.preload = 'auto';
-      // Retry play if requested before load finished
-      if (bgmPlaying) {
-        bgmAudio.play().then(function() {
-          bgmFade(bgmVolume, 600);
-          hideAudioPrompt();
-        }).catch(function() {
-          bgmPlaying = false;
-          showAudioPrompt();
-        });
+      return resp.arrayBuffer();
+    }).then(function(buf) {
+      if (!ctx) init();
+      if (!ctx) throw new Error('No AudioContext');
+
+      var dv = new DataView(buf);
+      
+      // Find "data" chunk in WAV
+      var dataOffset = 0;
+      for (var i = 0; i < buf.byteLength - 8; i++) {
+        if (dv.getUint8(i) === 0x64 && dv.getUint8(i+1) === 0x61 &&
+            dv.getUint8(i+2) === 0x74 && dv.getUint8(i+3) === 0x61) {
+          dataOffset = i + 8;
+          break;
+        }
+      }
+      if (dataOffset === 0) throw new Error('No data chunk in WAV');
+
+      // Read fmt chunk for sample rate and channels
+      var sampleRate = dv.getUint32(24, true);   // 22050
+      var channels = dv.getUint16(22, true);      // 1
+      var dataSize = dv.getUint32(dataOffset - 4, true);
+      var samplesPerChannel = dataSize / (channels * 2); // 16-bit = 2 bytes
+
+      // Create AudioBuffer and fill with PCM samples
+      var audioBuf = ctx.createBuffer(channels, samplesPerChannel, sampleRate);
+      
+      for (var ch = 0; ch < channels; ch++) {
+        var channelData = audioBuf.getChannelData(ch);
+        for (var s = 0; s < samplesPerChannel; s++) {
+          // Int16 -> Float32 (-32768..32767 -> -1..1)
+          var offset = dataOffset + (s * channels + ch) * 2;
+          var sample = dv.getInt16(offset, true);
+          channelData[s] = sample / 32768;
+        }
+      }
+
+      bgmBuffer = audioBuf;
+
+      // Start playing if requested
+      if (bgmPlaying && !bgmSource) {
+        startBgmSource();
       }
     }).catch(function(e) {
-      console.warn('BGM load failed:', e.message);
+      console.warn('BGM WAV load failed:', e.message);
     });
   }
 
+  function startBgmSource() {
+    if (!ctx || !bgmBuffer) return;
+    if (ctx.state === 'suspended') { resume(); }
+    
+    stopBgmSource();
+    
+    bgmSource = ctx.createBufferSource();
+    bgmSource.buffer = bgmBuffer;
+    bgmSource.loop = true;
+    
+    if (!bgmGainNode) {
+      bgmGainNode = ctx.createGain();
+      bgmGainNode.gain.value = 0;
+      bgmGainNode.connect(masterGain || ctx.destination);
+    }
+    
+    bgmSource.connect(bgmGainNode);
+    bgmSource.start(ctx.currentTime);
+  }
+
+  function stopBgmSource() {
+    if (bgmSource) {
+      try { bgmSource.stop(); } catch(e) {}
+      bgmSource.disconnect();
+      bgmSource = null;
+    }
+  }
+
   function bgmFade(to, ms) {
-    if (!bgmAudio) return;
+    if (!bgmGainNode) return;
     if (bgmFadeTimer) clearInterval(bgmFadeTimer);
-    var steps = 20;
-    var stepMs = ms / steps;
-    var from = bgmAudio.volume;
-    var diff = to - from;
+    var steps = 20, stepMs = ms / steps;
+    var from = bgmGainNode.gain.value, diff = to - from;
     if (Math.abs(diff) < 0.01) return;
     var i = 0;
     bgmFadeTimer = setInterval(function() {
       i++;
-      bgmAudio.volume = Math.max(0, Math.min(1, from + diff * (i / steps)));
+      bgmGainNode.gain.value = Math.max(0, Math.min(1, from + diff * (i / steps)));
       if (i >= steps) { clearInterval(bgmFadeTimer); bgmFadeTimer = null; }
     }, stepMs);
   }
 
   function bgmPlay() {
     if (muted) return;
-    if (!bgmAudio) { bgmLoadTrack(); return; }
-    if (bgmPlaying && !bgmAudio.paused && bgmAudio.volume >= bgmVolume - 0.01) return;
-
+    init();
     bgmPlaying = true;
-    bgmAudio.volume = 0;
-    bgmAudio.currentTime = 0;
     
-    bgmAudio.play().then(function() {
-      bgmFade(bgmVolume, 600);
-      hideAudioPrompt();
-    }).catch(function() {
-      bgmPlaying = false;
-      showAudioPrompt();
-    });
+    if (ctx && ctx.state === 'suspended') {
+      ctx.resume().then(function() {
+        if (bgmBuffer) { startBgmSource(); bgmFade(bgmVolume, 600); hideAudioPrompt(); }
+      }).catch(function() { showAudioPrompt(); });
+    } else {
+      if (bgmBuffer) { startBgmSource(); bgmFade(bgmVolume, 600); hideAudioPrompt(); }
+      else { bgmLoadTrack(); }
+    }
   }
 
   function bgmStop() {
     bgmPlaying = false;
     if (bgmFadeTimer) { clearInterval(bgmFadeTimer); bgmFadeTimer = null; }
-    if (bgmAudio && !bgmAudio.paused) {
+    if (bgmGainNode && bgmGainNode.gain.value > 0.01) {
       bgmFade(0, 350);
-      var a = bgmAudio;
-      setTimeout(function() { a.pause(); a.currentTime = 0; }, 400);
+      setTimeout(function() { stopBgmSource(); }, 400);
+    } else {
+      stopBgmSource();
     }
   }
 
-  function bgmCycle() {
-    bgmIndex = (bgmIndex + 1) % bgmFiles.length;
-    var wasPlaying = bgmPlaying;
-    bgmStop();
-    if (bgmAudio) { bgmAudio.pause(); bgmAudio = null; }
-    if (bgmBlobUrl) { URL.revokeObjectURL(bgmBlobUrl); bgmBlobUrl = null; }
-    bgmLoadTrack();
-    if (wasPlaying && !muted) setTimeout(function() { bgmPlay(); }, 500);
-    var name = bgmFiles[bgmIndex].replace('bgm_', '').replace(/_/g, ' ');
-    showBgmToast(name);
-    try { localStorage.setItem('jd_bgm_index', bgmIndex); } catch(e) {}
-    return name;
-  }
+  function bgmCycle() { showBgmToast('wav pcm'); }
+  function bgmGetName() { return 'wav pcm'; }
 
-  function bgmGetName() { return bgmFiles[bgmIndex].replace('bgm_', '').replace(/_/g, ' '); }
-
-  // Preload on page init
-  (function() {
-    try {
-      var saved = localStorage.getItem('jd_bgm_index');
-      if (saved !== null) bgmIndex = parseInt(saved) % bgmFiles.length;
-    } catch(e) {}
-    bgmLoadTrack();
-  })();
+  // Preload on init
+  (function() { bgmLoadTrack(); })();
 
   // Audio unlock on first interaction
   document.addEventListener('click', function unlockBgm() {
