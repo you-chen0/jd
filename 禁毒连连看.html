@@ -1417,28 +1417,18 @@ const SoundEngine = (function() {
   var bgmAudio = null;
   var bgmCurrent = null;
   var bgmPlaying = false;
+  var bgmWantPlay = false;  // true if user wants BGM (survives autoplay blocks)
   var bgmVolume = 0.55;
 
   function bgmLoadTrack() {
-    var wasPlaying = bgmPlaying;
-    if (bgmPlaying) {
-      if (bgmCurrent) { bgmCurrent.pause(); bgmCurrent.currentTime = 0; }
-    }
+    // Just load/reload the audio element, don't play
     if (bgmAudio) { bgmAudio.pause(); bgmAudio.currentTime = 0; bgmAudio = null; }
-    bgmCurrent = null;
-
+    if (bgmCurrent) { bgmCurrent = null; }
     var file = bgmFiles[bgmIndex] + '.mp3';
     bgmAudio = new Audio('bgm/' + file);
     bgmAudio.loop = true;
     bgmAudio.volume = 0;
     bgmAudio.preload = 'auto';
-
-    if (wasPlaying) {
-      bgmCurrent = bgmAudio;
-      bgmAudio.volume = bgmVolume;
-      var p = bgmAudio.play();
-      if (p && p.catch) p.catch(function(){});
-    }
   }
 
   function bgmFade(audio, to, ms) {
@@ -1446,6 +1436,7 @@ const SoundEngine = (function() {
     var stepMs = ms / steps;
     var from = audio.volume;
     var diff = to - from;
+    if (Math.abs(diff) < 0.01) return;
     var i = 0;
     var iv = setInterval(function() {
       i++;
@@ -1455,27 +1446,41 @@ const SoundEngine = (function() {
   }
 
   function bgmPlay() {
+    bgmWantPlay = true;
     if (muted) return;
     if (!bgmAudio) bgmLoadTrack();
-    if (bgmPlaying && bgmCurrent === bgmAudio) return;
     if (!bgmAudio) return;
 
-    // Fade out current
-    if (bgmCurrent && bgmCurrent !== bgmAudio) {
+    // Already playing this track at volume
+    if (bgmPlaying && bgmCurrent === bgmAudio && bgmCurrent.volume >= bgmVolume - 0.01) return;
+
+    // Fade out old track if switching
+    if (bgmCurrent && bgmCurrent !== bgmAudio && bgmPlaying) {
       bgmFade(bgmCurrent, 0, 350);
       var old = bgmCurrent;
       setTimeout(function() { old.pause(); old.currentTime = 0; }, 400);
+      bgmPlaying = false;
     }
 
     bgmCurrent = bgmAudio;
-    bgmPlaying = true;
     bgmAudio.currentTime = 0;
     var p = bgmAudio.play();
-    if (p && p.catch) p.catch(function(){});
-    bgmFade(bgmAudio, bgmVolume, 500);
+    if (p && p.then) {
+      p.then(function() {
+        bgmPlaying = true;
+        bgmFade(bgmAudio, bgmVolume, 500);
+      }).catch(function() {
+        bgmPlaying = false;
+        // Will retry on next user gesture
+      });
+    } else {
+      bgmPlaying = true;
+      bgmFade(bgmAudio, bgmVolume, 500);
+    }
   }
 
   function bgmStop() {
+    bgmWantPlay = false;
     bgmPlaying = false;
     if (bgmCurrent) {
       bgmFade(bgmCurrent, 0, 350);
@@ -1487,13 +1492,10 @@ const SoundEngine = (function() {
 
   function bgmCycle() {
     bgmIndex = (bgmIndex + 1) % bgmFiles.length;
+    var wasPlaying = bgmPlaying;
+    bgmPlaying = false;
     bgmLoadTrack();
-    if (bgmPlaying && !muted) {
-      bgmCurrent = bgmAudio;
-      bgmAudio.volume = bgmVolume;
-      var p = bgmAudio.play();
-      if (p && p.catch) p.catch(function(){});
-    }
+    if (wasPlaying && !muted) bgmPlay();
     // Show track name toast
     var name = bgmFiles[bgmIndex].replace('bgm_', '').replace(/_/g, ' ');
     showBgmToast(name);
@@ -1526,7 +1528,7 @@ const SoundEngine = (function() {
     } else {
       btn.textContent = '🔊';
       btn.classList.remove('muted');
-      if (bgmPlaying) bgmPlay();
+      if (bgmWantPlay) bgmPlay();
     }
     return muted;
   }
@@ -1536,12 +1538,12 @@ const SoundEngine = (function() {
   // Prime on first interaction
   document.addEventListener('click', function prime() {
     init(); resume();
-    if (!bgmPlaying && !muted) bgmPlay();
+    if (bgmWantPlay && !bgmPlaying && !muted) bgmPlay();
     document.removeEventListener('click', prime);
   }, false);
   document.addEventListener('touchstart', function prime() {
     init(); resume();
-    if (!bgmPlaying && !muted) bgmPlay();
+    if (bgmWantPlay && !bgmPlaying && !muted) bgmPlay();
     document.removeEventListener('touchstart', prime);
   }, false);
 
