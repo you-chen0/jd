@@ -1072,7 +1072,7 @@ body {
 <div class="spotlight" id="spotlight"></div>
 <button class="mute-btn" id="muteBtn" onclick="SoundEngine.toggleMute()" title="音效开关">🔊</button>
 <button class="mute-btn" id="bgmCycleBtn" title="切换BGM">🎵</button>
-<span class="ver-label">TERMINAL v1.6.5</span>
+<span class="ver-label">TERMINAL v1.6.6</span>
 
 <div class="app-shell">
 
@@ -1505,21 +1505,29 @@ const SoundEngine = (function() {
       if (dataOffset === 0) throw new Error('No data chunk in WAV');
 
       // Read fmt chunk for sample rate and channels
-      var sampleRate = dv.getUint32(24, true);   // 22050
+      var sampleRate = dv.getUint32(24, true);   // auto-detected
       var channels = dv.getUint16(22, true);      // 1
       var dataSize = dv.getUint32(dataOffset - 4, true);
-      var samplesPerChannel = dataSize / (channels * 2); // 16-bit = 2 bytes
+      var bitsPerSample = dv.getUint16(34, true);   // 8 or 16
+      var bytesPerSample = bitsPerSample / 8;
+      var samplesPerChannel = dataSize / (channels * bytesPerSample);
 
       // Create AudioBuffer and fill with PCM samples
       var audioBuf = ctx.createBuffer(channels, samplesPerChannel, sampleRate);
-      
+
       for (var ch = 0; ch < channels; ch++) {
         var channelData = audioBuf.getChannelData(ch);
         for (var s = 0; s < samplesPerChannel; s++) {
-          // Int16 -> Float32 (-32768..32767 -> -1..1)
-          var offset = dataOffset + (s * channels + ch) * 2;
-          var sample = dv.getInt16(offset, true);
-          channelData[s] = sample / 32768;
+          var offset = dataOffset + (s * channels + ch) * bytesPerSample;
+          var sample;
+          if (bitsPerSample === 8) {
+            // 8-bit unsigned: 0..255 -> -1..1
+            sample = (dv.getUint8(offset) - 128) / 128;
+          } else {
+            // 16-bit signed: -32768..32767 -> -1..1
+            sample = dv.getInt16(offset, true) / 32768;
+          }
+          channelData[s] = sample;
         }
       }
 
