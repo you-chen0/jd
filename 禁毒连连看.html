@@ -1752,6 +1752,8 @@ function startCase() {
   var i = 0;
   var iv = setInterval(function() {
     textEl.textContent += text[i];
+    // Typewriter tick every 3 chars, skip spaces
+    if (i % 3 === 0 && text[i] !== ' ') SoundEngine.click();
     i++;
     if (i >= text.length) {
       clearInterval(iv);
