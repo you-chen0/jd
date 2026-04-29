@@ -1020,59 +1020,16 @@ body {
   opacity: 1;
   transition: opacity 0.15s;
 }
-
-/* Audio unlock prompt */
-.audio-prompt {
-  position: fixed;
-  inset: 0;
-  z-index: 300;
-  background: rgba(13,11,9,0.92);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-}
-.audio-prompt.hidden { display: none; }
-.audio-prompt-box {
-  text-align: center;
-  padding: 40px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--noir-warm);
-}
-.audio-prompt-icon { font-size: 3em; margin-bottom: 16px; }
-.audio-prompt-text {
-  font-family: 'Noto Serif SC', serif;
-  font-size: 1.1em;
-  color: var(--text-parchment);
-  margin-bottom: 8px;
-}
-.audio-prompt-sub {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.6em;
-  color: var(--text-dim);
-  letter-spacing: 0.1em;
-}
 </style>
 </head>
 <body>
-<div class="audio-prompt hidden" id="audioPrompt">
-  <div class="audio-prompt-box">
-    <div class="audio-prompt-icon">🔊</div>
-    <div class="audio-prompt-text">点击任意位置开始</div>
-    <div class="audio-prompt-sub" id="audioPromptSub">TAP TO ENABLE AUDIO</div>
-  </div>
-</div>
-
 <div class="atmo-fog"></div>
 <div class="atmo-grain"></div>
 <div class="vignette" id="vignette"></div>
 <div class="spotlight" id="spotlight"></div>
 <button class="mute-btn" id="muteBtn" onclick="SoundEngine.toggleMute()" title="音效开关">🔊</button>
 <button class="mute-btn" id="bgmCycleBtn" title="切换BGM">🎵</button>
-<span class="ver-label">TERMINAL v1.7.1</span>
+<span class="ver-label">TERMINAL v1.7.2</span>
 
 <div class="app-shell">
 
@@ -1564,7 +1521,6 @@ const SoundEngine = (function() {
       bgmSource.connect(bgmGainNode);
       bgmSource.start(ctx.currentTime);
       bgmFade(bgmVolume, 600);
-      hideAudioPrompt();
     }
 
 
@@ -1591,7 +1547,7 @@ const SoundEngine = (function() {
       ctx.resume().then(function() {
         if (bgmBuffer) { doStartBgm(); }
         else { bgmLoadTrack(); }
-      }).catch(function() { showAudioPrompt(); });
+      }).catch(function() {});
     } else if (ctx && ctx.state === 'running') {
       if (bgmBuffer) { doStartBgm(); }
       else { bgmLoadTrack(); }
@@ -1656,26 +1612,6 @@ const SoundEngine = (function() {
     toggleMute: toggleMute, isMuted: isMuted
   };
 })();
-
-// Audio prompt helpers (outside SoundEngine)
-function showAudioPrompt() {
-  var el = document.getElementById('audioPrompt');
-  if (el) el.classList.remove('hidden');
-}
-function hideAudioPrompt() {
-  var el = document.getElementById('audioPrompt');
-  if (el) el.classList.add('hidden');
-}
-document.addEventListener('DOMContentLoaded', function() {
-  var prompt = document.getElementById('audioPrompt');
-  if (prompt) {
-    prompt.addEventListener('click', function() { SoundEngine.retryBgm(); });
-    prompt.addEventListener('touchstart', function(e) {
-      e.preventDefault();
-      SoundEngine.retryBgm();
-    });
-  }
-});
 
 /*
    ============================================ */
