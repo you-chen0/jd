@@ -1503,8 +1503,8 @@ const SoundEngine = (function() {
     }).then(function(audioBuf) {
       bgmBuffer = audioBuf;
       bgmLoaded = true;
-      // If play was requested before decode finished, start now
-      if (bgmPlaying && !bgmSource) {
+      // If play was requested before decode finished, try to start
+      if (bgmPlaying && !bgmSource && ctx && ctx.state === 'running') {
         startBgmSource();
       }
     }).catch(function(e) {
@@ -1557,23 +1557,33 @@ const SoundEngine = (function() {
   function bgmPlay() {
     if (muted) return;
     init();  // ensure AudioContext exists
-    resume();
     if (!bgmBuffer) bgmLoadTrack();
     
     bgmPlaying = true;
-    
-    if (bgmLoaded && bgmBuffer) {
-      if (!bgmSource) {
-        startBgmSource();
-        bgmFade(bgmVolume, 600);
-        hideAudioPrompt();
-      } else {
-        // Already playing, just ensure volume
-        bgmFade(bgmVolume, 300);
+
+    function doPlay() {
+      if (bgmLoaded && bgmBuffer) {
+        if (!bgmSource) {
+          startBgmSource();
+          bgmFade(bgmVolume, 600);
+        } else {
+          bgmFade(bgmVolume, 300);
+        }
         hideAudioPrompt();
       }
     }
-    // If not loaded yet, startBgmSource will be called in bgmLoadTrack's .then()
+
+    // Must await resume() before starting source on mobile
+    if (ctx && ctx.state === 'suspended') {
+      ctx.resume().then(function() {
+        doPlay();
+      }).catch(function() {
+        showAudioPrompt();
+      });
+    } else if (ctx && ctx.state === 'running') {
+      doPlay();
+    }
+    // If ctx not ready, prime handler will retry on touch
   }
 
   function bgmStop() {
@@ -1616,21 +1626,27 @@ const SoundEngine = (function() {
   })();
 
   function retryBgm() {
-    init(); resume();
-    if (!bgmPlaying && !muted) bgmPlay();
+    init();
+    if (ctx && ctx.state === 'suspended') {
+      ctx.resume().then(function() { bgmPlay(); });
+    } else {
+      bgmPlay();
+    }
   }
 
   // Prime on first interaction (retry BGM if autoplay was blocked)
-  document.addEventListener('click', function prime() {
-    init(); resume();
-    if (!bgmPlaying && !muted) bgmPlay();
-    document.removeEventListener('click', prime);
-  }, false);
-  document.addEventListener('touchstart', function prime() {
-    init(); resume();
-    if (!bgmPlaying && !muted) bgmPlay();
-    document.removeEventListener('touchstart', prime);
-  }, false);
+  function onFirstTouch() {
+    init();
+    if (ctx && ctx.state === 'suspended') {
+      ctx.resume().then(function() { bgmPlay(); });
+    } else {
+      bgmPlay();
+    }
+    document.removeEventListener('click', onFirstTouch);
+    document.removeEventListener('touchstart', onFirstTouch);
+  }
+  document.addEventListener('click', onFirstTouch, false);
+  document.addEventListener('touchstart', onFirstTouch, false);
 
   function toggleMute() {
     init();
