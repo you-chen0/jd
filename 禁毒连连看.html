@@ -1536,10 +1536,12 @@ const SoundEngine = (function() {
   // Prime on first interaction
   document.addEventListener('click', function prime() {
     init(); resume();
+    if (!bgmPlaying && !muted) bgmPlay();
     document.removeEventListener('click', prime);
   }, false);
   document.addEventListener('touchstart', function prime() {
     init(); resume();
+    if (!bgmPlaying && !muted) bgmPlay();
     document.removeEventListener('touchstart', prime);
   }, false);
 
@@ -2336,6 +2338,7 @@ function resetGame() {
   }
   load();
   updateCaseCards();
+  SoundEngine.bgmPlay();
 
   // BGM cycle button
   var cycleBtn = document.getElementById('bgmCycleBtn');
