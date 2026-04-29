@@ -1072,7 +1072,7 @@ body {
 <div class="spotlight" id="spotlight"></div>
 <button class="mute-btn" id="muteBtn" onclick="SoundEngine.toggleMute()" title="音效开关">🔊</button>
 <button class="mute-btn" id="bgmCycleBtn" title="切换BGM">🎵</button>
-<span class="ver-label">TERMINAL v1.6.1</span>
+<span class="ver-label">TERMINAL v1.6.2</span>
 
 <div class="app-shell">
 
@@ -1474,140 +1474,73 @@ const SoundEngine = (function() {
     noiseBurst(t + 0.5, 120, 0.7, 0.18, 0.25, 'lowpass');
   }
 
-  // --- BGM: Web Audio decoded MP3 (cross-browser compatible) ---
+  // --- BGM: HTML5 Audio (most compatible, no Web Audio decode issues) ---
   var bgmFiles = ['bgm_alt1'];
   var bgmIndex = 0;
-  var bgmBuffer = null;       // decoded AudioBuffer
-  var bgmSource = null;       // current AudioBufferSourceNode
-  var bgmGainNode = null;     // GainNode for volume control
+  var bgmAudio = null;
   var bgmPlaying = false;
   var bgmVolume = 0.55;
   var bgmFadeTimer = null;
-  var bgmLoaded = false;
-
-  var bgmError = null;
 
   function bgmLoadTrack() {
-    bgmLoaded = false;
-    bgmError = null;
+    if (bgmAudio) { bgmAudio.pause(); bgmAudio.src = ''; bgmAudio = null; }
     var file = bgmFiles[bgmIndex] + '.mp3';
-    var url = 'bgm/' + file;
-    
-    fetch(url).then(function(resp) {
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      return resp.arrayBuffer();
-    }).then(function(buf) {
-      if (!ctx) throw new Error('No AudioContext - tap first');
-      // Use callback form for Safari/Quark compatibility
-      return new Promise(function(resolve, reject) {
-        var handled = false;
-        ctx.decodeAudioData(buf, function(audioBuf) {
-          if (!handled) { handled = true; resolve(audioBuf); }
-        }, function(err) {
-          if (!handled) { handled = true; reject(err || new Error('decode error')); }
-        });
-        // Fallback: if decodeAudioData returns a promise (modern Chrome),
-        // use that instead of callbacks
-        var maybePromise = ctx.decodeAudioData(buf);
-        if (maybePromise && typeof maybePromise.then === 'function') {
-          maybePromise.then(resolve, reject);
-        }
-      });
-    }).then(function(audioBuf) {
-      bgmBuffer = audioBuf;
-      bgmLoaded = true;
-      bgmError = null;
-      if (bgmPlaying && !bgmSource && ctx && ctx.state === 'running') {
-        startBgmSource();
-      }
-    }).catch(function(e) {
-      bgmError = e.message || 'decode error';
-      console.warn('BGM load failed:', bgmError);
-    });
-  }
-
-  function startBgmSource() {
-    if (!ctx || !bgmBuffer || !bgmLoaded) return;
-    stopBgmSource();
-    
-    bgmSource = ctx.createBufferSource();
-    bgmSource.buffer = bgmBuffer;
-    bgmSource.loop = true;
-    
-    if (!bgmGainNode) {
-      bgmGainNode = ctx.createGain();
-      bgmGainNode.gain.value = 0;
-      bgmGainNode.connect(masterGain || ctx.destination);
-    }
-    
-    bgmSource.connect(bgmGainNode);
-    bgmSource.start(ctx.currentTime);
-  }
-
-  function stopBgmSource() {
-    if (bgmSource) {
-      try { bgmSource.stop(); } catch(e) {}
-      bgmSource.disconnect();
-      bgmSource = null;
-    }
+    bgmAudio = new Audio('bgm/' + file);
+    bgmAudio.loop = true;
+    bgmAudio.volume = 0;
+    bgmAudio.preload = 'auto';
+    bgmAudio.load();
   }
 
   function bgmFade(to, ms) {
-    if (!bgmGainNode) return;
+    if (!bgmAudio) return;
     if (bgmFadeTimer) clearInterval(bgmFadeTimer);
     var steps = 20;
     var stepMs = ms / steps;
-    var from = bgmGainNode.gain.value;
+    var from = bgmAudio.volume;
     var diff = to - from;
     if (Math.abs(diff) < 0.01) return;
     var i = 0;
     bgmFadeTimer = setInterval(function() {
       i++;
-      bgmGainNode.gain.value = Math.max(0, Math.min(1, from + diff * (i / steps)));
+      bgmAudio.volume = Math.max(0, Math.min(1, from + diff * (i / steps)));
       if (i >= steps) { clearInterval(bgmFadeTimer); bgmFadeTimer = null; }
     }, stepMs);
   }
 
   function bgmPlay() {
     if (muted) return;
-    init();  // ensure AudioContext exists
-    if (!bgmBuffer) bgmLoadTrack();
+    if (!bgmAudio) bgmLoadTrack();
+    if (!bgmAudio) return;
     
+    // Already playing at volume
+    if (bgmPlaying && !bgmAudio.paused && bgmAudio.volume >= bgmVolume - 0.01) return;
+
     bgmPlaying = true;
-
-    function doPlay() {
-      if (bgmLoaded && bgmBuffer) {
-        if (!bgmSource) {
-          startBgmSource();
-          bgmFade(bgmVolume, 600);
-        } else {
-          bgmFade(bgmVolume, 300);
-        }
+    bgmAudio.currentTime = 0;
+    
+    var p = bgmAudio.play();
+    if (p && p.then) {
+      p.then(function() {
+        bgmFade(bgmVolume, 600);
         hideAudioPrompt();
-      }
-    }
-
-    // Must await resume() before starting source on mobile
-    if (ctx && ctx.state === 'suspended') {
-      ctx.resume().then(function() {
-        doPlay();
       }).catch(function() {
+        bgmPlaying = false;
         showAudioPrompt();
       });
-    } else if (ctx && ctx.state === 'running') {
-      doPlay();
+    } else {
+      bgmFade(bgmVolume, 600);
+      hideAudioPrompt();
     }
-    // If ctx not ready, prime handler will retry on touch
   }
 
   function bgmStop() {
     bgmPlaying = false;
     if (bgmFadeTimer) { clearInterval(bgmFadeTimer); bgmFadeTimer = null; }
-    if (bgmGainNode && bgmGainNode.gain.value > 0.01) {
+    if (bgmAudio && !bgmAudio.paused) {
       bgmFade(0, 350);
-      setTimeout(function() { stopBgmSource(); }, 400);
-    } else {
-      stopBgmSource();
+      var a = bgmAudio;
+      setTimeout(function() { a.pause(); a.currentTime = 0; }, 400);
     }
   }
 
@@ -1615,9 +1548,6 @@ const SoundEngine = (function() {
     bgmIndex = (bgmIndex + 1) % bgmFiles.length;
     var wasPlaying = bgmPlaying;
     bgmStop();
-    stopBgmSource();
-    bgmBuffer = null;
-    bgmLoaded = false;
     bgmLoadTrack();
     if (wasPlaying && !muted) bgmPlay();
     var name = bgmFiles[bgmIndex].replace('bgm_', '').replace(/_/g, ' ');
@@ -1630,7 +1560,7 @@ const SoundEngine = (function() {
     return bgmFiles[bgmIndex].replace('bgm_', '').replace(/_/g, ' ');
   }
 
-  // Load saved BGM preference and start loading
+  // Load saved BGM preference and preload track
   (function() {
     try {
       var saved = localStorage.getItem('jd_bgm_index');
@@ -1639,28 +1569,22 @@ const SoundEngine = (function() {
     bgmLoadTrack();
   })();
 
-  function retryBgm() {
-    init();
-    if (ctx && ctx.state === 'suspended') {
-      ctx.resume().then(function() { bgmPlay(); });
-    } else {
-      bgmPlay();
-    }
-  }
+  // Audio unlock: any click/touch triggers play
+  document.addEventListener('click', function unlockBgm() {
+    init(); resume();
+    if (!bgmPlaying && !muted) bgmPlay();
+    document.removeEventListener('click', unlockBgm);
+  }, false);
+  document.addEventListener('touchend', function unlockBgm() {
+    init(); resume();
+    if (!bgmPlaying && !muted) bgmPlay();
+    document.removeEventListener('touchend', unlockBgm);
+  }, false);
 
-  // Prime on first interaction (retry BGM if autoplay was blocked)
-  function onFirstTouch() {
-    init();
-    if (ctx && ctx.state === 'suspended') {
-      ctx.resume().then(function() { bgmPlay(); });
-    } else {
-      bgmPlay();
-    }
-    document.removeEventListener('click', onFirstTouch);
-    document.removeEventListener('touchstart', onFirstTouch);
+  function retryBgm() {
+    init(); resume();
+    if (!bgmPlaying && !muted) bgmPlay();
   }
-  document.addEventListener('click', onFirstTouch, false);
-  document.addEventListener('touchend', onFirstTouch, false);
 
   function toggleMute() {
     init();
@@ -1673,7 +1597,7 @@ const SoundEngine = (function() {
     } else {
       btn.textContent = '🔊';
       btn.classList.remove('muted');
-      if (!bgmPlaying) bgmPlay();
+      bgmPlay();
     }
     return muted;
   }
@@ -1681,8 +1605,6 @@ const SoundEngine = (function() {
   function isMuted() { return muted; }
 
   return {
-    _ctxState: function() { return ctx ? ctx.state : 'no-ctx'; },
-    _bgmError: bgmError,
     init: init, resume: resume,
     click: click, typewriter: typewriter,
     match: match, mismatch: mismatch, combo: combo,
