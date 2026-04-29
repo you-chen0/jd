@@ -1062,7 +1062,7 @@ body {
   <div class="audio-prompt-box">
     <div class="audio-prompt-icon">🔊</div>
     <div class="audio-prompt-text">点击任意位置开始</div>
-    <div class="audio-prompt-sub">TAP TO ENABLE AUDIO</div>
+    <div class="audio-prompt-sub" id="audioPromptSub">TAP TO ENABLE AUDIO</div>
   </div>
 </div>
 
@@ -1072,7 +1072,7 @@ body {
 <div class="spotlight" id="spotlight"></div>
 <button class="mute-btn" id="muteBtn" onclick="SoundEngine.toggleMute()" title="音效开关">🔊</button>
 <button class="mute-btn" id="bgmCycleBtn" title="切换BGM">🎵</button>
-<span class="ver-label">TERMINAL v1.6</span>
+<span class="ver-label">TERMINAL v1.7</span>
 
 <div class="app-shell">
 
@@ -1485,30 +1485,33 @@ const SoundEngine = (function() {
   var bgmFadeTimer = null;
   var bgmLoaded = false;
 
+  var bgmError = null;
+
   function bgmLoadTrack() {
-    // Fetch and decode MP3 via Web Audio (works on all browsers including Quark)
     bgmLoaded = false;
+    bgmError = null;
     var file = bgmFiles[bgmIndex] + '.mp3';
     var url = 'bgm/' + file;
     
     fetch(url).then(function(resp) {
-      if (!resp.ok) throw new Error('BGM fetch failed');
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
       return resp.arrayBuffer();
     }).then(function(buf) {
       if (!ctx) init();
-      if (!ctx) return;
+      if (!ctx) throw new Error('No AudioContext');
       return new Promise(function(resolve, reject) {
         ctx.decodeAudioData(buf, resolve, reject);
       });
     }).then(function(audioBuf) {
       bgmBuffer = audioBuf;
       bgmLoaded = true;
-      // If play was requested before decode finished, try to start
+      bgmError = null;
       if (bgmPlaying && !bgmSource && ctx && ctx.state === 'running') {
         startBgmSource();
       }
     }).catch(function(e) {
-      console.warn('BGM decode failed:', e);
+      bgmError = e.message || 'decode error';
+      console.warn('BGM load failed:', bgmError);
     });
   }
 
@@ -1667,6 +1670,8 @@ const SoundEngine = (function() {
   function isMuted() { return muted; }
 
   return {
+    _ctxState: function() { return ctx ? ctx.state : 'no-ctx'; },
+    _bgmError: bgmError,
     init: init, resume: resume,
     click: click, typewriter: typewriter,
     match: match, mismatch: mismatch, combo: combo,
@@ -1682,6 +1687,16 @@ const SoundEngine = (function() {
 function showAudioPrompt() {
   var el = document.getElementById('audioPrompt');
   if (el) el.classList.remove('hidden');
+  // Show diagnostic info
+  var sub = document.getElementById('audioPromptSub');
+  if (sub) {
+    var ctxState = '?';
+    try { ctxState = SoundEngine._ctxState(); } catch(e) {}
+    var parts = ['TAP TO ENABLE'];
+    if (SoundEngine._bgmError) parts.push('Error: ' + SoundEngine._bgmError);
+    parts.push('Ctx: ' + ctxState);
+    sub.textContent = parts.join(' · ');
+  }
 }
 function hideAudioPrompt() {
   var el = document.getElementById('audioPrompt');
