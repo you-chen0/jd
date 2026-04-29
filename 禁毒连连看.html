@@ -1072,7 +1072,7 @@ body {
 <div class="spotlight" id="spotlight"></div>
 <button class="mute-btn" id="muteBtn" onclick="SoundEngine.toggleMute()" title="音效开关">🔊</button>
 <button class="mute-btn" id="bgmCycleBtn" title="切换BGM">🎵</button>
-<span class="ver-label">TERMINAL v1.6.3</span>
+<span class="ver-label">TERMINAL v1.6.4</span>
 
 <div class="app-shell">
 
@@ -1474,168 +1474,115 @@ const SoundEngine = (function() {
     noiseBurst(t + 0.5, 120, 0.7, 0.18, 0.25, 'lowpass');
   }
 
-  // --- BGM: Web Audio synthesis (universal compatibility) ---
+  // --- BGM: Blob URL + Audio element (in-memory, no fetch on play) ---
+  var bgmFiles = ['bgm_alt1'];
+  var bgmIndex = 0;
+  var bgmBlobUrl = null;
+  var bgmAudio = null;
   var bgmPlaying = false;
-  var bgmGainNode = null;
-  var bgmNodes = [];
-  var bgmInterval = null;
-  var bgmVolume = 0.12;  // low, ambient level
+  var bgmVolume = 0.55;
+  var bgmFadeTimer = null;
 
-  // Chord progression: Am - F - G - Em
-  var bgmChords = [
-    [220.00, 261.63, 329.63],  // Am
-    [174.61, 220.00, 261.63],  // F
-    [196.00, 246.94, 293.66],  // G
-    [164.81, 196.00, 246.94]   // Em
-  ];
-  var bgmBassRoots = [110.00, 87.31, 98.00, 82.41];
-
-  function bgmBuildGraph() {
-    if (!ctx) init();
-    if (!ctx) return;
-    resume();
+  function bgmLoadTrack() {
+    // Fetch MP3, convert to Blob URL (in-memory, avoids network during play())
+    var file = bgmFiles[bgmIndex] + '.mp3';
+    var url = 'bgm/' + file;
     
-    // Master BGM gain
-    bgmGainNode = ctx.createGain();
-    bgmGainNode.gain.value = 0;
-    bgmGainNode.connect(masterGain || ctx.destination);
-    
-    // Low-pass filter for warmth
-    var lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 600;
-    lp.Q.value = 0.5;
-    lp.connect(bgmGainNode);
-    
-    // 3 triangle wave pads (slightly detuned for richness)
-    var padOscs = [];
-    var detunes = [0, -7, 8];
-    for (var i = 0; i < 3; i++) {
-      var osc = ctx.createOscillator();
-      osc.type = 'triangle';
-      osc.frequency.value = bgmChords[0][i];
-      osc.detune.value = detunes[i];
-      var g = ctx.createGain();
-      g.gain.value = 0.25;
-      osc.connect(g);
-      g.connect(lp);
-      osc.start(0);
-      padOscs.push({ osc: osc, gain: g });
-      bgmNodes.push(osc, g);
-    }
-    
-    // Bass (sine, one octave down)
-    var bass = ctx.createOscillator();
-    bass.type = 'sine';
-    bass.frequency.value = bgmBassRoots[0];
-    var bassG = ctx.createGain();
-    bassG.gain.value = 0.35;
-    bass.connect(bassG);
-    bassG.connect(lp);
-    bass.start(0);
-    bgmNodes.push(bass, bassG);
-    
-    // Slow LFO for filter movement
-    var lfo = ctx.createOscillator();
-    lfo.type = 'sine';
-    lfo.frequency.value = 0.08;
-    var lfoG = ctx.createGain();
-    lfoG.gain.value = 100;
-    lfo.connect(lfoG);
-    lfoG.connect(lp.frequency);
-    lfo.start(0);
-    bgmNodes.push(lfo, lfoG);
-    
-    // Subtle noise texture
-    var buf = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);
-    var ch = buf.getChannelData(0);
-    for (var j = 0; j < ch.length; j++) ch[j] = (Math.random() - 0.5) * 0.012;
-    var ns = ctx.createBufferSource();
-    ns.buffer = buf;
-    ns.loop = true;
-    var nhp = ctx.createBiquadFilter();
-    nhp.type = 'highpass';
-    nhp.frequency.value = 800;
-    var ng = ctx.createGain();
-    ng.gain.value = 0.05;
-    ns.connect(nhp);
-    nhp.connect(ng);
-    ng.connect(bgmGainNode);
-    ns.start(0);
-    bgmNodes.push(ns, nhp, ng);
-    
-    // Store for chord changes
-    bgmNodes._padOscs = padOscs;
-    bgmNodes._bass = bass;
-    bgmNodes._lp = lp;
-    
-    bgmPlaying = true;
-    hideAudioPrompt();
-  }
-
-  function bgmDestroyGraph() {
-    bgmPlaying = false;
-    if (bgmInterval) { clearInterval(bgmInterval); bgmInterval = null; }
-    bgmNodes.forEach(function(n) { try { n.stop(); } catch(e) {} });
-    bgmNodes = [];
-    if (bgmGainNode) { try { bgmGainNode.disconnect(); } catch(e) {}; bgmGainNode = null; }
-  }
-
-  function bgmChordChange() {
-    if (!bgmPlaying || !bgmGainNode) return;
-    var chordIdx = 0;
-    bgmInterval = setInterval(function() {
-      if (!bgmPlaying || bgmNodes._padOscs === undefined) {
-        clearInterval(bgmInterval);
-        return;
+    fetch(url).then(function(resp) {
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      return resp.blob();
+    }).then(function(blob) {
+      if (bgmBlobUrl) URL.revokeObjectURL(bgmBlobUrl);
+      bgmBlobUrl = URL.createObjectURL(blob);
+      // Create audio element with blob URL
+      if (bgmAudio) { bgmAudio.pause(); bgmAudio = null; }
+      bgmAudio = new Audio(bgmBlobUrl);
+      bgmAudio.loop = true;
+      bgmAudio.volume = 0;
+      bgmAudio.preload = 'auto';
+      // Retry play if requested before load finished
+      if (bgmPlaying) {
+        bgmAudio.play().then(function() {
+          bgmFade(bgmVolume, 600);
+          hideAudioPrompt();
+        }).catch(function() {
+          bgmPlaying = false;
+          showAudioPrompt();
+        });
       }
-      chordIdx = (chordIdx + 1) % bgmChords.length;
-      var c = bgmChords[chordIdx];
-      var t = ctx.currentTime;
-      for (var k = 0; k < 3; k++) {
-        bgmNodes._padOscs[k].osc.frequency.linearRampToValueAtTime(c[k], t + 0.15);
-      }
-      bgmNodes._bass.frequency.linearRampToValueAtTime(bgmBassRoots[chordIdx], t + 0.15);
-    }, 4000);
+    }).catch(function(e) {
+      console.warn('BGM load failed:', e.message);
+    });
   }
 
   function bgmFade(to, ms) {
-    if (!bgmGainNode) return;
+    if (!bgmAudio) return;
+    if (bgmFadeTimer) clearInterval(bgmFadeTimer);
     var steps = 20;
     var stepMs = ms / steps;
-    var from = bgmGainNode.gain.value;
+    var from = bgmAudio.volume;
     var diff = to - from;
     if (Math.abs(diff) < 0.01) return;
     var i = 0;
-    var iv = setInterval(function() {
+    bgmFadeTimer = setInterval(function() {
       i++;
-      bgmGainNode.gain.value = Math.max(0, Math.min(1, from + diff * (i / steps)));
-      if (i >= steps) clearInterval(iv);
+      bgmAudio.volume = Math.max(0, Math.min(1, from + diff * (i / steps)));
+      if (i >= steps) { clearInterval(bgmFadeTimer); bgmFadeTimer = null; }
     }, stepMs);
   }
 
   function bgmPlay() {
-    if (muted || bgmPlaying) return;
-    resume();
-    bgmBuildGraph();
-    bgmChordChange();
-    bgmFade(bgmVolume, 800);
+    if (muted) return;
+    if (!bgmAudio) { bgmLoadTrack(); return; }
+    if (bgmPlaying && !bgmAudio.paused && bgmAudio.volume >= bgmVolume - 0.01) return;
+
+    bgmPlaying = true;
+    bgmAudio.volume = 0;
+    bgmAudio.currentTime = 0;
+    
+    bgmAudio.play().then(function() {
+      bgmFade(bgmVolume, 600);
+      hideAudioPrompt();
+    }).catch(function() {
+      bgmPlaying = false;
+      showAudioPrompt();
+    });
   }
 
   function bgmStop() {
-    if (bgmGainNode && bgmGainNode.gain.value > 0.01) {
-      bgmFade(0, 500);
-      setTimeout(function() { bgmDestroyGraph(); }, 550);
-    } else {
-      bgmDestroyGraph();
+    bgmPlaying = false;
+    if (bgmFadeTimer) { clearInterval(bgmFadeTimer); bgmFadeTimer = null; }
+    if (bgmAudio && !bgmAudio.paused) {
+      bgmFade(0, 350);
+      var a = bgmAudio;
+      setTimeout(function() { a.pause(); a.currentTime = 0; }, 400);
     }
   }
 
-  // No cycle for synth BGM (only one "track")
   function bgmCycle() {
-    showBgmToast('synth');
+    bgmIndex = (bgmIndex + 1) % bgmFiles.length;
+    var wasPlaying = bgmPlaying;
+    bgmStop();
+    if (bgmAudio) { bgmAudio.pause(); bgmAudio = null; }
+    if (bgmBlobUrl) { URL.revokeObjectURL(bgmBlobUrl); bgmBlobUrl = null; }
+    bgmLoadTrack();
+    if (wasPlaying && !muted) setTimeout(function() { bgmPlay(); }, 500);
+    var name = bgmFiles[bgmIndex].replace('bgm_', '').replace(/_/g, ' ');
+    showBgmToast(name);
+    try { localStorage.setItem('jd_bgm_index', bgmIndex); } catch(e) {}
+    return name;
   }
-  function bgmGetName() { return 'synth'; }
+
+  function bgmGetName() { return bgmFiles[bgmIndex].replace('bgm_', '').replace(/_/g, ' '); }
+
+  // Preload on page init
+  (function() {
+    try {
+      var saved = localStorage.getItem('jd_bgm_index');
+      if (saved !== null) bgmIndex = parseInt(saved) % bgmFiles.length;
+    } catch(e) {}
+    bgmLoadTrack();
+  })();
 
   // Audio unlock on first interaction
   document.addEventListener('click', function unlockBgm() {
